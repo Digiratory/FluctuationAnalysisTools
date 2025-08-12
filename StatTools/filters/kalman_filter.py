@@ -3,6 +3,7 @@ from filterpy.kalman import KalmanFilter
 from numpy.typing import NDArray
 
 from StatTools.analysis.dfa import DFA
+from StatTools.filters.sympy_utils import get_sympy_filter_matrix, refine_filter_matrix
 from StatTools.generators.kasdin_generator import KasdinGenerator
 
 
@@ -34,44 +35,25 @@ class EnhancedKalmanFilter(KalmanFilter):
         generator = KasdinGenerator(h, length=signal.shape[0])
         return generator.get_filter_coefficients()
 
-    def get_F(
-        self, signal: NDArray[np.float64], dt: float, order: int = 2
-    ) -> NDArray[np.float64]:
-        """
-        Calculates the transition matrix F for the Kalman filter.
+    def get_filter_matrix(self, order: int, signal: np.array, dt: float = 1.0):
+        """Get the filter transition matrix based on the *.
 
         Parameters:
-            signal (NDArray[np.float64]): Input signal
-            dt (float): Time step
-            order (int): Order of the filter
+            order (int): Order of the filter.
 
         Returns:
-            NDArray[np.float64]: transition matrix F
-
-        Raises:
-            ValueError: If the filter order is not supported
-                        (only orders 1, 2, 3 are currently implemented)
+           NDArray[np.float64]: Filter transition matrix.
         """
         dfa = DFA(signal)
         h = dfa.find_h()
         generator = KasdinGenerator(h, length=signal.shape[0])
-        A = generator.get_filter_coefficients()
+        ar_filter = generator.get_filter_coefficients()
         if order == 1:
             return np.array([[1, dt], [0, 1]])
-        if order == 2:
-            return np.array(
-                [[-A[1] - A[2], A[2] * dt], [(-1 - A[1] - A[2]) / dt, A[2]]]
-            )
-        # TODO: add dt for order 3
-        if order == 3:
-            return np.array(
-                [
-                    [-A[1] - A[2] - A[3], A[2] + 2 * A[3], -A[3]],
-                    [-1 - A[1] - A[2] - A[3], A[2] + 2 * A[3], -A[3]],
-                    [-1 - A[1] - A[2] - A[3], -1 + A[2] + 2 * A[3], -A[3]],
-                ]
-            )
-        raise ValueError(f"Order {order} is not supported")
+        number_matrix = refine_filter_matrix(
+            get_sympy_filter_matrix(order), order, ar_filter
+        )
+        return np.array(number_matrix)
 
     def auto_configure(
         self,
@@ -91,4 +73,4 @@ class EnhancedKalmanFilter(KalmanFilter):
         """
         # TODO: add Q matrix auto configuration
         self.R = self.get_R(noise)
-        self.F = self.get_F(signal, dt, order)
+        self.F = self.get_filter_matrix(order, signal, dt)
