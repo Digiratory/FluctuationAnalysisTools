@@ -10,8 +10,7 @@ def nth_order_derivative(n, k):
     x = Function("x")
     if n <= 1:
         return x(k) - x(k - 1)
-    else:
-        return nth_order_derivative(n - 1, k) - nth_order_derivative(n - 1, k - 1)
+    return nth_order_derivative(n - 1, k) - nth_order_derivative(n - 1, k - 1)
 
 
 def get_all_coeffs(expr, n):

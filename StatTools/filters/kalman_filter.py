@@ -3,7 +3,10 @@ from filterpy.kalman import KalmanFilter
 from numpy.typing import NDArray
 
 from StatTools.analysis.dfa import DFA
-from StatTools.filters.sympy_utils import get_sympy_filter_matrix, refine_filter_matrix
+from StatTools.filters.symbolic_kalman import (
+    get_sympy_filter_matrix,
+    refine_filter_matrix,
+)
 from StatTools.generators.kasdin_generator import KasdinGenerator
 
 

@@ -1,7 +1,10 @@
 import numpy as np
 import pytest
 
-from StatTools.filters.sympy_utils import get_sympy_filter_matrix, refine_filter_matrix
+from StatTools.filters.symbolic_kalman import (
+    get_sympy_filter_matrix,
+    refine_filter_matrix,
+)
 from StatTools.generators.kasdin_generator import KasdinGenerator
 
 
