@@ -56,14 +56,14 @@ class EnhancedKalmanFilter(KalmanFilter):
         number_matrix = refine_filter_matrix(
             get_sympy_filter_matrix(order), order, ar_filter
         )
-        return np.array(number_matrix)
+        return np.array(number_matrix, dtype=np.float64)
 
     def auto_configure(
         self,
         signal: NDArray[np.float64],
         noise: NDArray[np.float64],
-        dt: float,
-        order: int = 2,
+        dt: float = 1,
+        order: int = None,
     ):
         """
         Automatically adjusts R, F based on the input data.
@@ -74,6 +74,9 @@ class EnhancedKalmanFilter(KalmanFilter):
             dt (float): Time interval between measurements
             ar_vector(NDArray[np.float64]): Autoregressive filter coefficients
         """
+        if order is None:
+            order = self.dim_x
         # TODO: add Q matrix auto configuration
+        self.H[0][0] = 1.0
         self.R = self.get_R(noise)
         self.F = self.get_filter_matrix(order, signal, dt)
