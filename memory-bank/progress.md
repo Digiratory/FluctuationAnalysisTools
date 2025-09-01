@@ -78,7 +78,7 @@
 **Community**: Academic contributors with ongoing development
 
 ### Release Status
-- **Current Version**: 1.6.1 (based on recent commits)
+- **Current Version**: 1.9.0 (based on git tags)
 - **Release Frequency**: Regular updates with new features and bug fixes
 - **Stability**: Stable API with backward compatibility
 
@@ -198,7 +198,7 @@
 - **Coverage**: Complete project context documented across all core files
 - **Maintenance**: Framework established for ongoing documentation updates
 
-### Version 1.6.1 (Current)
+### Version 1.9.0 (Current)
 - **New Features**: Enhanced parallel processing, improved error handling
 - **Bug Fixes**: Memory leak fixes, numerical stability improvements
 - **Performance**: Better scaling for large datasets

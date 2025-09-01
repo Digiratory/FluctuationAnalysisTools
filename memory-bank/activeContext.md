@@ -26,6 +26,12 @@
 - **Project Structure**: Well-organized modules (generators/, analysis/, filters/, tests/)
 - **Dependencies**: Core scientific Python stack (NumPy, pandas, scipy)
 
+### Version Correction and Release Documentation (2025)
+- **Version Update**: Corrected current version from 1.6.1 to 1.9.0 based on git tags
+- **Release Instructions**: Created comprehensive release documentation accounting for automated GitHub Actions
+- **Memory Bank Updates**: Updated progress.md with accurate version information
+- **Validation**: Verified git tag structure and automated release workflow
+
 ### Architecture Insights
 - **Parallel Processing**: Multi-threaded implementations with shared memory buffers
 - **Performance Optimization**: C++ extensions for computational kernels
