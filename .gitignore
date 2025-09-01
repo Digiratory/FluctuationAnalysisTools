@@ -13,3 +13,5 @@ FluctuationAnalysisTools.egg-info/*
 wheelhouse/*
 .DS_Store
 research/out/*
+
+*.pyd
