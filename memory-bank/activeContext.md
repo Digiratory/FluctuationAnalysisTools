@@ -71,6 +71,7 @@
 - **Documentation**: API docs + research examples + theoretical background
 - **Code Style**: Consistent formatting with black, type hints throughout
 - **Version Control**: Feature branches with clear commit messages
+- **Commit Message Standards**: Strict adherence to Conventional Commits 1.0.0. All commits must use structured format with type prefixes (feat, fix, docs, etc.), optional scope, and descriptive messages. Breaking changes require '!' prefix or BREAKING CHANGE footer. Enables automated versioning and changelog generation.
 
 ### Research Considerations
 - **Algorithm Accuracy**: Validate implementations against published results

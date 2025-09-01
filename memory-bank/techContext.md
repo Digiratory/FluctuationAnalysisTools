@@ -91,7 +91,7 @@ pip install -r requirements.txt
 
 ### Version Control
 - **Git Flow**: Feature branches, develop/main branches
-- **Conventional commits**: Structured commit messages
+- **Conventional commits**: Structured commit messages following Conventional Commits 1.0.0 specification. Commits must be prefixed with types like 'feat', 'fix', 'docs', etc., followed by optional scope and required description. Breaking changes indicated by '!' prefix or BREAKING CHANGE footer. Enables automated changelog generation and semantic versioning.
 - **Pull requests**: Code review process for all changes
 - **Release tags**: Versioned releases with changelogs
 
