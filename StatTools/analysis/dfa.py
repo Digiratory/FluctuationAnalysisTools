@@ -11,6 +11,20 @@ from tqdm import TqdmWarning, tqdm
 
 
 def bar_manager(description, total, counter, lock, mode="total", stop_bit=None):
+    """
+    Manages progress bar display for long-running operations.
+
+    Args:
+        description (str): Description text for the progress bar
+        total (int): Total number of items to process
+        counter (Value): Shared counter for tracking progress
+        lock (Lock): Thread lock for safe counter access
+        mode (str): Display mode - "total" or "percent"
+        stop_bit (Value): Optional stop signal for early termination
+
+    Returns:
+        None: Displays progress bar until completion
+    """
     max_val = total
     if mode == "percent":
         max_val = 100
@@ -42,6 +56,59 @@ def bar_manager(description, total, counter, lock, mode="total", stop_bit=None):
 
 
 class DFA:
+    """
+    Detrended Fluctuation Analysis (DFA) implementation for estimating Hurst exponent.
+
+    DFA is a method for determining the statistical self-affinity of a signal by analyzing
+    its fluctuation function F(s) as a function of time scale s. The Hurst exponent H
+    is estimated from the scaling relationship F(s) ~ s^H.
+
+    For fractional Brownian motion with Hurst exponent H:
+    - H < 0.5: Anti-persistent behavior
+    - H = 0.5: Random walk (uncorrelated)
+    - H > 0.5: Persistent behavior (long-range correlations)
+
+    Basic usage:
+        ```python
+        import numpy as np
+        from StatTools.analysis.dfa import DFA
+
+        # Generate sample data with known Hurst exponent
+        data = np.random.normal(0, 1, 10000)
+
+        # Create DFA analyzer
+        dfa = DFA(data, degree=2, root=False)
+
+        # Estimate Hurst exponent
+        hurst_exponent = dfa.find_h()
+
+        # For 2D data (multiple time series)
+        data_2d = np.random.normal(0, 1, (10, 10000))
+        dfa_2d = DFA(data_2d)
+        hurst_exponents = dfa_2d.find_h()  # Returns array of H values
+        ```
+
+    Args:
+        dataset (array-like): Input time series data. Can be:
+            - 1D numpy array for single time series
+            - 2D numpy array for multiple time series (shape: n_series x length)
+            - Path to text file containing data
+        degree (int): Polynomial degree for detrending (default: 2)
+        root (bool): If True, use root-mean-square fluctuations F(s) ~ s^{H-1}
+                    If False, use standard fluctuations F(s) ~ s^H (default: False)
+        ignore_input_control (bool): Skip input validation (default: False)
+
+    Attributes:
+        dataset (numpy.ndarray): Processed input data
+        degree (int): Polynomial degree for detrending
+        root (bool): Root fluctuation flag
+        s (numpy.ndarray): Scale values used in analysis
+        F_s (numpy.ndarray): Fluctuation function values
+
+    Raises:
+        NameError: If input file doesn't exist or has invalid format
+        ValueError: If input array has unsupported dimensions
+    """
 
     def __init__(self, dataset, degree=2, root=False, ignore_input_control=False):
         if ignore_input_control:
@@ -107,6 +174,15 @@ class DFA:
 
     @staticmethod
     def initializer_for_parallel_mod(shared_array, h_est, shared_c, shared_l):
+        """
+        Initialize global variables for parallel processing.
+
+        Args:
+            shared_array: Shared memory array containing datasets
+            h_est: Shared array for storing Hurst exponent estimates
+            shared_c: Shared counter for progress tracking
+            shared_l: Shared lock for thread safety
+        """
         global datasets_array
         global estimations
         global shared_counter
@@ -118,6 +194,26 @@ class DFA:
 
     @staticmethod
     def dfa_core_cycle(dataset, degree, root):
+        """
+        Core DFA algorithm implementation.
+
+        Computes the fluctuation function F(s) for different time scales s by:
+        1. Integrating the time series to get cumulative sum Y(i)
+        2. Dividing Y(i) into segments of length s
+        3. Fitting polynomial of degree 'degree' to each segment
+        4. Computing RMS fluctuation F(s) of detrended segments
+        5. Repeating for different scales s
+
+        Args:
+            dataset (numpy.ndarray): Input time series
+            degree (int): Polynomial degree for detrending
+            root (bool): Use root fluctuations if True
+
+        Returns:
+            tuple: (s_values, F_s_values) where:
+                - s_values: Array of scale values (log-spaced)
+                - F_s_values: Corresponding fluctuation function values
+        """
         data_mean = numpy.mean(dataset)
         data = dataset - data_mean
         Y_cumsum = numpy.cumsum(data)
@@ -154,6 +250,24 @@ class DFA:
         return numpy.array(x_Axis), numpy.array(y_Axis)
 
     def find_h(self, simple_mode=True):
+        """
+        Estimate Hurst exponent from fluctuation analysis.
+
+        Performs DFA on the dataset and fits a linear regression to the
+        log-log plot of F(s) vs s to estimate the Hurst exponent.
+
+        Args:
+            simple_mode (bool): If True, use simple linear regression.
+                               If False, non-linear fitting (not implemented)
+
+        Returns:
+            float or numpy.ndarray: Hurst exponent(s). Returns:
+                - Single float for 1D input data
+                - Array of floats for 2D input data (one per time series)
+
+        Raises:
+            NameError: If non-linear mode is requested (not implemented)
+        """
         if self.dataset.ndim == 1:
             self.s, self.F_s = self.dfa_core_cycle(self.dataset, self.degree, self.root)
         else:
@@ -189,6 +303,26 @@ class DFA:
         h_target=float(),
         h_limit=float(),
     ):
+        """
+        Perform parallel DFA analysis on 2D datasets.
+
+        Processes multiple time series in parallel using multiprocessing.
+        Useful for large datasets with many time series.
+
+        Args:
+            threads (int): Number of parallel processes (default: CPU count)
+            progress_bar (bool): Show progress bar if True
+            h_control (bool): Enable Hurst exponent control mode
+            h_target (float): Target Hurst exponent for control mode
+            h_limit (float): Acceptable deviation from target H
+
+        Returns:
+            numpy.ndarray or tuple: Hurst exponents, or (H_values, invalid_indices)
+                                 if h_control is True
+
+        Raises:
+            ValueError: If dataset is too small for parallel processing
+        """
         if threads == 1 or self.dataset.ndim == 1:
             return self.find_h()
 
@@ -264,7 +398,23 @@ class DFA:
             return numpy.frombuffer(h_estimation_in_memory.get_obj())
 
     def parallel_core(self, indices, quantity, length, h_control, h_target, h_limit):
+        """
+        Core parallel processing function for DFA analysis.
 
+        Processes a subset of time series indices in parallel.
+
+        Args:
+            indices (numpy.ndarray): Array indices to process
+            quantity (int): Total number of time series
+            length (int): Length of each time series
+            h_control (bool): Enable Hurst exponent control
+            h_target (float): Target Hurst exponent
+            h_limit (float): Acceptable deviation limit
+
+        Returns:
+            numpy.ndarray: Array of invalid indices if h_control enabled,
+                          empty array otherwise
+        """
         invalid_i = []
         for i in indices:
             vector = numpy.frombuffer(datasets_array.get_obj()).reshape(

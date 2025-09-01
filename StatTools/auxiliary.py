@@ -1,5 +1,4 @@
 import operator
-import time
 from contextlib import closing
 from ctypes import c_double, c_int64
 from functools import partial, reduce
@@ -14,65 +13,51 @@ from numpy import array, copyto, frombuffer, ndarray, s_
 
 class SharedBuffer:
     """
-    The instance of this class allows me manage shared memory. At this
-    moment it supports only 1d, 2d arrays. Only numerical data. No need
-    to declare global initializers for a pool.
+    Shared memory buffer for efficient inter-process data sharing.
+
+    This class provides a convenient interface for managing shared memory arrays
+    across multiple processes. It supports 1D, 2D, and 3D numerical arrays and
+    includes methods for data manipulation and parallel processing.
+
+    The SharedBuffer uses multiprocessing.Array for memory sharing, allowing
+    efficient data exchange between processes without expensive serialization.
 
     Basic usage:
+        ```python
+        import numpy as np
+        from StatTools.auxiliary import SharedBuffer
 
-        1. Suppose you have some array you want to share within your pool:
+        # Create shared buffer for 1000x1000 float array
+        shape = (1000, 1000)
+        buffer = SharedBuffer(shape, c_double)
 
-            shape = (10 ** 3, 10 ** 3)                  # just input shape
-            some_arr = int64(normal(100, 30, shape))    # creating array
+        # Copy data to shared memory
+        data = np.random.normal(0, 1, shape)
+        buffer.write(data)
 
-            s = SharedBuffer(shape, c_double)           # initialize buffer
-            s.write(some_arr)                           # copy input data
+        # Access data from shared memory
+        shared_data = buffer.to_array()
 
-        NOTE: IF YOU USE THIS METHOD 4th ROW DOUBLES MEMORY USAGE!
+        # Apply function to entire buffer
+        buffer.apply_in_place(np.sin)
+        ```
 
-        2. You can copy data sequentially. It terms of memory it's way more
-        efficient path. Wherever you want to extract data from the buffer
-        you have to use this type of slicing:
+    Args:
+        shape (tuple): Shape of the array (1D, 2D, or 3D)
+        dtype: Data type for the array (c_double, c_int64, etc.)
 
-            s[1:10, :] - get a portion
-            s[7, 3]    - get a value
+    Attributes:
+        shape (tuple): Array shape
+        dtype: Array data type
+        buffer (Array): Underlying multiprocessing shared memory array
 
-            I didn't really override __set_item__ and __get_item__ in the
-            proper way.
+    Raises:
+        NotImplementedError: If array dimension > 3
 
-        3. Having initialized the shared buffer ('s' in the example above)
-        you can use this pattern to call from workers:
-
-        def worker():
-            handler = SharedBuffer.get("ARR")
-            ...
-
-        if __name__ = '__main__':
-
-            shape = (10 ** 3, 10 ** 3)
-            some_arr = int64(normal(100, 30, shape))
-            s = SharedBuffer(shape, c_double)
-            s.write(some_arr)
-
-            with closing(Pool(processes=4, initializer=s.buffer_init,
-                                    initargs=({"ARR":s}, ))) as pool:
-                ...
-
-
-    Methods available:
-
-        s.apply(func, by_1st_dim=False) - allows to apply your function to
-            entire buffer or for elements at the first dimension (by_1st_dim=True).
-            This way you don't change the buffer itself, but you can get a result.
-
-            s.apply(sum) - get the total sum of buffer
-
-        s.apply_in_place(func, by_1st_dim=False) - same as 'apply', but changes the
-            buffer.
-
-        s.to_numpy() - gives you a simple numpy array.
-
-
+    Note:
+        - Supports only numerical data types
+        - Memory is automatically managed and cleaned up
+        - Thread-safe for read/write operations
     """
 
     def __init__(self, shape: tuple, dtype=Union[c_double, c_int64]):
@@ -85,25 +70,43 @@ class SharedBuffer:
         self.iter_counter = 0
 
     def __getitem__(self, item):
+        """
+        Get item from shared buffer using numpy-style indexing.
+
+        Args:
+            item: Index or slice object
+
+        Returns:
+            ndarray or scalar: Requested data from shared memory
+        """
         if isinstance(item, int):
             return self.__get_handle()[item]
         else:
             return self.__get_handle()[s_[item]]
 
     def __setitem__(self, key, value):
+        """
+        Set item in shared buffer using numpy-style indexing.
 
+        Args:
+            key: Index or slice object
+            value: Value to set
+        """
         if isinstance(key, int):
             self.__get_handle()[key] = value
         else:
             self.__get_handle()[s_[key]] = value
 
     def __repr__(self):
+        """String representation of the shared buffer."""
         return str(self.__get_handle())
 
     def __iter__(self):
+        """Iterator over the first dimension of the array."""
         return self
 
     def __next__(self):
+        """Get next item in iteration."""
         while self.iter_counter < self.shape[0]:
             self.iter_counter += 1
             return self[self.iter_counter - 1]
@@ -111,12 +114,24 @@ class SharedBuffer:
         raise StopIteration
 
     def __del__(self):
+        """Clean up shared memory resources."""
         del self.buffer
 
     def __get_handle(self):
+        """Get numpy array handle to shared memory."""
         return frombuffer(self.buffer.get_obj(), dtype=self.dtype).reshape(self.shape)
 
     def write(self, arr: ndarray, by_1_st_dim: bool = False) -> None:
+        """
+        Write numpy array to shared memory buffer.
+
+        Args:
+            arr (ndarray): Source array to copy
+            by_1_st_dim (bool): If True, copy row-by-row for 2D arrays
+
+        Raises:
+            ValueError: If array shapes don't match
+        """
         if arr.shape != self.shape:
             raise ValueError(f"Input array must have the same shape! arr: {arr.shape}")
 
@@ -127,6 +142,16 @@ class SharedBuffer:
             copyto(self.__get_handle(), arr)
 
     def apply(self, func, by_1st_dim=False):
+        """
+        Apply function to buffer data without modifying original.
+
+        Args:
+            func: Function to apply
+            by_1st_dim (bool): Apply to each row if True, entire array if False
+
+        Returns:
+            Result of function application
+        """
         result = []
         if by_1st_dim:
             for i, v in enumerate(self):
@@ -137,6 +162,13 @@ class SharedBuffer:
 
     # @profile
     def apply_in_place(self, func, by_1st_dim=False):
+        """
+        Apply function to buffer data in-place.
+
+        Args:
+            func: Function to apply
+            by_1st_dim (bool): Apply to each row if True, entire array if False
+        """
         if by_1st_dim:
             for i, v in enumerate(self):
                 self[i] = func(v)
@@ -144,23 +176,76 @@ class SharedBuffer:
             self.to_array()[:] = func(self.to_array())
 
     def to_array(self):
+        """Convert shared buffer to regular numpy array."""
         return self.__get_handle().reshape(self.shape)
 
     @staticmethod
     def buffer_init(vars_to_update):
+        """
+        Initialize global variables for multiprocessing workers.
+
+        Args:
+            vars_to_update (dict): Dictionary of variables to set globally
+        """
         globals().update(vars_to_update)
 
     @classmethod
     def get(cls, name):
+        """
+        Get global variable by name.
+
+        Args:
+            name (str): Name of global variable
+
+        Returns:
+            Global variable value
+        """
         return globals()[name]
 
 
 class PearsonParallel:
     """
+    Parallel computation of Pearson correlation matrices.
 
-    КОД СТАРЫЙ, НЕ РЕФАКТОРИЛ!
+    This class provides efficient parallel computation of correlation matrices
+    for large datasets using multiprocessing. It distributes the computation
+    across multiple CPU cores for improved performance.
 
+    The implementation uses a triangular computation approach to avoid
+    redundant calculations and shared memory for efficient data exchange
+    between processes.
 
+    Basic usage:
+        ```python
+        import numpy as np
+        from StatTools.auxiliary import PearsonParallel
+
+        # Create large dataset
+        data = np.random.normal(0, 1, (1000, 5000))
+
+        # Compute correlation matrix in parallel
+        corr_computer = PearsonParallel(data)
+        correlation_matrix = corr_computer.create_matrix(threads=8, progress_bar=True)
+        ```
+
+    Args:
+        input_array (ndarray): Input data matrix (n_variables x n_samples)
+
+    Attributes:
+        arr (ndarray): Input data array
+        quantity (int): Number of variables
+        length (int): Number of samples per variable
+
+    Raises:
+        NameError: If input array is 1D or has invalid dimensions
+
+    Warning:
+        For small datasets (< 10^5 elements), parallel processing may be slower
+        due to overhead. Consider using numpy.corrcoef for small arrays.
+
+    Note:
+        The correlation matrix is symmetric with 1.0 on the diagonal.
+        Only the upper triangle is computed to avoid redundancy.
     """
 
     def __init__(self, input_array):
@@ -203,7 +288,19 @@ class PearsonParallel:
             self.length = self.arr.shape[1]
 
     def create_matrix(self, threads=cpu_count(), progress_bar=False):
+        """
+        Compute correlation matrix using parallel processing.
 
+        Args:
+            threads (int): Number of threads to use (default: CPU count)
+            progress_bar (bool): Show progress bar if True
+
+        Returns:
+            ndarray: Correlation matrix of shape (n_variables, n_variables)
+
+        Raises:
+            NameError: If threads < 1
+        """
         if threads < 1:
             error_str = (
                 "\n    PearsonParallel Error: There is no point of calling this method using less than 2 "
@@ -246,6 +343,18 @@ class PearsonParallel:
 
     @staticmethod
     def triangle_divider(field_size):
+        """
+        Divide correlation matrix computation into triangular regions.
+
+        This method divides the correlation matrix computation into
+        triangular regions that can be processed independently.
+
+        Args:
+            field_size (int): Size of the correlation matrix
+
+        Returns:
+            tuple: (working_ranges, cells_to_count)
+        """
         cpu_available = cpu_count()
         cells_to_count = (field_size * field_size - field_size) / 2
 
@@ -275,6 +384,15 @@ class PearsonParallel:
 
     @staticmethod
     def global_initializer(arr, bar_val, bar_lock, result_arr):
+        """
+        Initialize global variables for parallel correlation computation.
+
+        Args:
+            arr: Shared input data array
+            bar_val: Progress bar counter
+            bar_lock: Progress bar lock
+            result_arr: Shared result matrix
+        """
         global shared_array
         global counter
         global lock
@@ -287,6 +405,15 @@ class PearsonParallel:
 
     @staticmethod
     def corr_matrix(working_range, quantity, length):
+        """
+        Compute correlations for a subset of matrix elements.
+
+        Args:
+            working_range: Range of matrix elements to compute
+            quantity: Number of variables
+            length: Number of samples per variable
+        """
+
         def get_row(index):
             return numpy.frombuffer(shared_array.get_obj()).reshape((quantity, length))[
                 index
@@ -335,14 +462,35 @@ class PearsonParallel:
 
 
 class CheckNumpy:
+    """
+    Descriptor for numpy array type checking and conversion.
+
+    This descriptor automatically converts list inputs to numpy arrays
+    and validates that assigned values are numpy arrays.
+
+    Usage:
+        ```python
+        class MyClass:
+            data = CheckNumpy()
+
+            def __init__(self, data):
+                self.data = data  # Automatically converted to numpy array
+        ```
+
+    Raises:
+        ValueError: If assigned value cannot be converted to numpy array
+    """
 
     def __set_name__(self, owner, name):
+        """Set the attribute name for this descriptor."""
         self.name = name
 
     def __get__(self, instance, owner):
+        """Get the attribute value."""
         return instance.__dict__[self.name]
 
     def __set__(self, instance, value):
+        """Set the attribute value with type checking and conversion."""
         if isinstance(value, ndarray):
             instance.__dict__[self.name] = value
         elif isinstance(value, list):

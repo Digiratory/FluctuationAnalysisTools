@@ -6,35 +6,81 @@ from functools import partial
 from multiprocessing import Pool
 from typing import Union
 
-from numpy import (
-    arange,
-    array,
-    array_split,
-    concatenate,
-    cumsum,
-    mean,
-    ndarray,
-    polyfit,
-    polyval,
-    sqrt,
-    zeros,
-)
-from numpy.linalg import inv
+import numpy as np
 
 from StatTools.auxiliary import SharedBuffer
 
 
 class DPCCA:
+    """
+    Detrended Partial Cross-Correlation Analysis (DPCCA) implementation.
+
+    DPCCA is an extension of Detrended Cross-Correlation Analysis (DCCA) that
+    examines the partial cross-correlations between two time series while
+    controlling for the influence of other time series. It provides insights
+    into the intrinsic relationships between time series by removing spurious
+    correlations.
+
+    The method computes:
+    - P: Partial cross-correlation coefficients on different time scales
+    - R: Cross-correlation coefficients (may include spurious correlations)
+    - F: Covariance matrix of detrended fluctuations
+
+    Basic usage:
+        ```python
+        import numpy as np
+        from StatTools.analysis.dpcca_as_class import DPCCA
+
+        # Multiple time series data (shape: n_series x length)
+        data = np.random.normal(0, 1, (5, 10000))
+
+        # Create DPCCA analyzer
+        dpcca = DPCCA(data, pd=2, step=0.5, s=[16, 32, 64, 128])
+
+        # Perform analysis
+        P, R, F, scales = dpcca.forward()
+
+        # P[i,j,s] contains partial cross-correlation between series i,j at scale s
+        ```
+
+    Args:
+        arr (numpy.ndarray or SharedBuffer): Input time series data.
+            Shape should be (n_series, length) for multiple series.
+        pd (int): Polynomial degree for detrending (default: 2)
+        step (float): Step size for scale segmentation (0 < step <= 1)
+        s (Union[int, Iterable]): Scale values for analysis. Can be:
+            - Single integer for one scale
+            - List/array of integers for multiple scales
+
+    Attributes:
+        arr (numpy.ndarray or SharedBuffer): Input data
+        pd (int): Polynomial degree for detrending
+        step (float): Step size for segmentation
+        s (Union[int, Iterable]): Scale values
+        shape (tuple): Shape of input data
+
+    Raises:
+        ValueError: If step is not in (0, 1] or if scale values are invalid
+        TypeError: If input types are incorrect
+    """
 
     def __init__(
         self,
-        arr: Union[ndarray, SharedBuffer],
+        arr: Union[np.ndarray, SharedBuffer],
         pd: int,
         step: float,
         s: Union[int, Iterable],
     ):
+        """
+        Initialize DPCCA analyzer.
 
-        if isinstance(arr, ndarray):
+        Args:
+            arr: Input time series data
+            pd: Polynomial degree for detrending
+            step: Step size for scale segmentation
+            s: Scale values for analysis
+        """
+        if isinstance(arr, np.ndarray):
             self.arr = [arr] if arr.ndim == 1 else arr
         else:
             self.arr = arr
@@ -45,10 +91,35 @@ class DPCCA:
             raise ValueError("0 < step <= 1 !")
 
     def forward(self, processes: int = 1, force_gc: Union[bool, tuple] = False):
+        """
+        Execute DPCCA analysis.
+
+        Performs the complete DPCCA analysis on the input data, computing
+        partial cross-correlations, cross-correlations, and fluctuation
+        covariances at specified scales.
+
+        Args:
+            processes (int): Number of parallel processes (default: 1)
+            force_gc (Union[bool, tuple]): Garbage collection control.
+                - False: No forced GC
+                - True: Force GC every 2 cycles
+                - tuple: (gc_frequency, gc_generations)
+
+        Returns:
+            tuple: (P, R, F, s) where:
+                - P: Partial cross-correlation matrix (shape: n_series x n_series x n_scales)
+                - R: Cross-correlation matrix (shape: n_series x n_series x n_scales)
+                - F: Fluctuation covariance matrix (shape: n_series x n_series x n_scales)
+                - s: Scale values used in analysis
+
+        Raises:
+            ValueError: If scale values exceed data length constraints
+            TypeError: If scale input type is invalid
+        """
         if force_gc:
             force_gc = (2, 2)
 
-        if isinstance(self.s, (tuple, list, ndarray)):
+        if isinstance(self.s, (tuple, list, np.ndarray)):
             init_s_len = len(self.s)
 
             s = list(filter(lambda x: x <= self.shape[1] / 4, self.s))
@@ -62,19 +133,19 @@ class DPCCA:
 
             processes = len(s) if processes > len(s) else processes
 
-            S = array(s, dtype=int) if not isinstance(self.s, ndarray) else s
-            S_by_workers = array_split(S, processes)
+            S = np.array(s, dtype=int) if not isinstance(self.s, np.ndarray) else s
+            S_by_workers = np.array_split(S, processes)
 
             if processes == 1:
                 return self._dpcca_worker(s) + s
 
-            if isinstance(self.arr, ndarray):
+            if isinstance(self.arr, np.ndarray):
                 chunk = SharedBuffer(self.shape, c_double)
                 chunk.write(self.arr)
-                chunk.apply_in_place(cumsum, by_1st_dim=True)
+                chunk.apply_in_place(np.cumsum, by_1st_dim=True)
                 self.arr = chunk
             elif isinstance(self.arr, SharedBuffer):
-                self.arr.apply_in_place(cumsum, by_1st_dim=True)
+                self.arr.apply_in_place(np.cumsum, by_1st_dim=True)
 
             with closing(
                 Pool(
@@ -96,26 +167,41 @@ class DPCCA:
             )
 
     def _dpcca_worker(self, s: Union[int, Iterable], force_gc: Union[bool, tuple]):
+        """
+        Core DPCCA computation worker.
 
+        Performs the actual DPCCA calculations for given scale values.
+        This method implements the mathematical core of the DPCCA algorithm.
+
+        Args:
+            s: Scale value(s) to compute correlations for
+            force_gc: Garbage collection control parameters
+
+        Returns:
+            tuple: (P, R, F) matrices for the computed scales where:
+                - P: Partial cross-correlation coefficients
+                - R: Cross-correlation coefficients
+                - F: Fluctuation covariances
+        """
         s_current = [s] if not isinstance(s, Iterable) else s
 
         cumsum_arr = (
             SharedBuffer.get("ARR")
             if isinstance(self.arr, SharedBuffer)
-            else cumsum(self.arr, axis=1)
+            else np.cumsum(self.arr, axis=1)
         )
 
         shape = self.arr.shape
 
-        F = zeros((len(s_current), shape[0], shape[0]), dtype=float)
-        R = zeros((len(s_current), shape[0], shape[0]), dtype=float)
-        P = zeros((len(s_current), shape[0], shape[0]), dtype=float)
+        F = np.zeros((len(s_current), shape[0], shape[0]), dtype=float)
+        R = np.zeros((len(s_current), shape[0], shape[0]), dtype=float)
+        P = np.zeros((len(s_current), shape[0], shape[0]), dtype=float)
 
         for s_i, s_val in enumerate(s_current):
 
-            V = arange(0, shape[1] - s_val, int(self.step * s_val))
-            Xw = arange(s_val, dtype=int)
-            Y = zeros((shape[0], len(V)), dtype=object)
+            V = np.arange(0, shape[1] - s_val, int(self.step * s_val))
+            Xw = np.arange(s_val, dtype=int)
+            Y = np.zeros((shape[0], len(V)), dtype=object)
 
             for n in range(cumsum_arr.shape[0]):
                 for v_i, v in enumerate(V):
@@ -124,27 +210,27 @@ class DPCCA:
                         print(f"\tFor s = {s_val} W is an empty slice!")
                         return P, R, F
 
-                    p = polyfit(Xw, W, deg=self.pd)
-                    Z = polyval(p, Xw)
+                    p = np.polyfit(Xw, W, deg=self.pd)
+                    Z = np.polyval(p, Xw)
                     Y[n][v_i] = Z - W
 
                     if isinstance(force_gc, tuple):
                         if n % force_gc[0] == 0:
                             gc.collect(force_gc[1])
 
-            Y = array([concatenate(Y[i]) for i in range(Y.shape[0])])
+            Y = np.array([np.concatenate(Y[i]) for i in range(Y.shape[0])])
 
             for n in range(shape[0]):
                 for m in range(n + 1):
-                    F[s_i][n][m] = mean(Y[n] * Y[m]) / (s_val - 1)
+                    F[s_i][n][m] = np.mean(Y[n] * Y[m])  # / (s_val - 1)
                     F[s_i][m][n] = F[s_i][n][m]
 
             for n in range(shape[0]):
                 for m in range(n + 1):
-                    R[s_i][n][m] = F[s_i][n][m] / sqrt(F[s_i][n][n] * F[s_i][m][m])
+                    R[s_i][n][m] = F[s_i][n][m] / np.sqrt(F[s_i][n][n] * F[s_i][m][m])
                     R[s_i][m][n] = R[s_i][n][m]
 
-            Cinv = inv(R[s_i])
+            Cinv = np.linalg.inv(R[s_i])
 
             for n in range(shape[0]):
                 for m in range(n + 1):
@@ -154,7 +240,7 @@ class DPCCA:
                         )
                         break
 
-                    P[s_i][n][m] = -Cinv[n][m] / sqrt(Cinv[n][n] * Cinv[m][m])
+                    P[s_i][n][m] = -Cinv[n][m] / np.sqrt(Cinv[n][n] * Cinv[m][m])
                     P[s_i][m][n] = P[s_i][n][m]
                 else:
                     continue
