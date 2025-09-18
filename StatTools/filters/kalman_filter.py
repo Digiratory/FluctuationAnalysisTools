@@ -52,7 +52,7 @@ class EnhancedKalmanFilter(KalmanFilter):
         generator = KasdinGenerator(h, length=signal.shape[0])
         ar_filter = generator.get_filter_coefficients()
         if order == 1:
-            return np.array([[1, dt], [0, 1]])
+            return np.array([[1]])
         number_matrix = refine_filter_matrix(
             get_sympy_filter_matrix(order), order, ar_filter
         )
