@@ -152,13 +152,12 @@ class EnhancedKalmanFilter(KalmanFilter):
             dt (float): Time interval between measurements
             ar_vector(NDArray[np.float64]): Autoregressive filter coefficients
         """
-        if order is None:
-            order = self.dim_x
         # TODO: add Q matrix auto configuration
         self.H[0][0] = 1.0
         model_h = get_extra_h_dfa(signal)
         noise_var = np.std(noise) ** 2
-        self.set_parameters(model_h, noise_var, dt, order)
+        kasdin_lenght = len(signal)
+        self.set_parameters(model_h, noise_var, kasdin_lenght, dt, order)
 
     def set_parameters(
         self,
@@ -168,6 +167,8 @@ class EnhancedKalmanFilter(KalmanFilter):
         dt: float = 1,
         order: int = None,
     ):
+        if order is None:
+            order = self.dim_x
         if isinstance(noise_var, list):
             raise NotImplementedError("Only for 1d data")
         self.H[0][0] = 1.0
