@@ -3,6 +3,7 @@ from filterpy.kalman import KalmanFilter
 from numpy.typing import NDArray
 
 from StatTools.analysis.dfa import DFA
+from StatTools.experimental.analysis.tools import get_extra_h_dfa
 from StatTools.filters.symbolic_kalman import (
     get_sympy_filter_matrix,
     refine_filter_matrix,
@@ -17,7 +18,7 @@ class EnhancedKalmanFilter(KalmanFilter):
     and measurement covariance matrix (R).
     """
 
-    def get_R(self, signal: NDArray[np.float64]) -> NDArray[np.float64]:
+    def eval_R(self, signal: NDArray[np.float64]) -> NDArray[np.float64]:
         """
         Calculates the measurement covariance matrix (R) for the Kalman filter.
 
@@ -27,7 +28,7 @@ class EnhancedKalmanFilter(KalmanFilter):
         Returns:
             NDArray[np.float64]: A 1x1 dimension covariance matrix R
         """
-        return np.std(signal) ** 2
+        raise NotImplementedError()
 
     def _get_filter_coefficients(
         self, signal: NDArray[np.float64]
@@ -38,18 +39,19 @@ class EnhancedKalmanFilter(KalmanFilter):
         generator = KasdinGenerator(h, length=signal.shape[0])
         return generator.get_filter_coefficients()
 
-    def get_filter_matrix(self, order: int, signal: np.array, dt: float = 1.0):
+    def get_filter_matrix(
+        self, order: int, model_h: np.array, length: int, dt: float = 1.0
+    ):
         """Get the filter transition matrix based on the *.
 
+        TODO: implement dt
         Parameters:
             order (int): Order of the filter.
 
         Returns:
            NDArray[np.float64]: Filter transition matrix.
         """
-        dfa = DFA(signal)
-        h = dfa.find_h()
-        generator = KasdinGenerator(h, length=signal.shape[0])
+        generator = KasdinGenerator(model_h, length=length)
         ar_filter = generator.get_filter_coefficients()
         if order == 1:
             return np.array([[1]])
@@ -78,5 +80,20 @@ class EnhancedKalmanFilter(KalmanFilter):
             order = self.dim_x
         # TODO: add Q matrix auto configuration
         self.H[0][0] = 1.0
-        self.R = self.get_R(noise)
-        self.F = self.get_filter_matrix(order, signal, dt)
+        model_h = get_extra_h_dfa(signal)
+        noise_var = np.std(noise) ** 2
+        self.set_parameters(model_h, noise_var, dt, order)
+
+    def set_parameters(
+        self,
+        model_h,
+        noise_var: float | list[float],
+        kasdin_lenght: int,
+        dt: float = 1,
+        order: int = None,
+    ):
+        if isinstance(noise_var, list):
+            raise NotImplementedError("Only for 1d data")
+        self.H[0][0] = 1.0
+        self.R = noise_var
+        self.F = self.get_filter_matrix(order, model_h, kasdin_lenght, dt)
