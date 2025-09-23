@@ -3,33 +3,10 @@ import multiprocessing
 import numpy as np
 import pandas as pd
 
-from StatTools.analysis.dfa import DFA
+from StatTools.experimental.analysis.tools import get_extra_h_dfa
+from StatTools.experimental.augmentation.perturbations import add_poisson_gaps
 from StatTools.filters.kalman_filter import EnhancedKalmanFilter
-from StatTools.generators.kasdin_generator import KasdinGenerator
-
-
-def get_extra_h(signal):
-    h = DFA(signal).find_h()
-    new_h = h
-    new_sihnal = signal
-    if h > 1.5:
-        # differentiate the signal
-        diff_count = 0
-        while new_h > 1.5:
-            diff_count += 1
-            new_sihnal = np.diff(new_sihnal)
-            new_h = DFA(new_sihnal).find_h()
-        new_h += diff_count
-
-    elif h < 0.5:
-        # integrate the signal
-        integrate_count = 0
-        while new_h < 0.5:
-            integrate_count += 1
-            new_sihnal = np.cumsum(new_sihnal)
-            new_h = DFA(new_sihnal).find_h()
-        new_h -= integrate_count
-    return new_h
+from StatTools.generators.kasdin_generator import create_kasdin_generator
 
 
 def process_single_iter(args):
@@ -41,11 +18,11 @@ def process_single_iter(args):
         signal = get_signal(h, trj_len, s)
         for r in r_list:
             gaps_signals = {}
-            gaps_signals["gaps_short_signal"] = get_gaps_signal(signal, s / 2)
-            gaps_signals["gaps_eq_signal"] = get_gaps_signal(signal, s)
-            gaps_signals["gaps_long_signal"] = get_gaps_signal(signal, s * 2)
+            gaps_signals["gaps_short_signal"] = add_poisson_gaps(signal, 0.1, s / 2)
+            gaps_signals["gaps_eq_signal"] = add_poisson_gaps(signal, 0.1, s)
+            gaps_signals["gaps_long_signal"] = add_poisson_gaps(signal, 0.1, s * 2)
             for name, gap_signal in gaps_signals.items():
-                restored_signal = restore_signal(signal, gap_signal, r)
+                restored_signal = apply_kalman_filter(signal, gap_signal, h, r)
                 metrics = get_metrics(signal, restored_signal)
                 if name == "gaps_short_signal":
                     gaps_len = s / 2
@@ -70,74 +47,40 @@ def process_single_iter(args):
 
 
 def get_r_list() -> tuple:
-    return list(range(1, 9))
+    return [2, 4, 8]
 
 
-def get_signal(h: float, length: int, s: int) -> np.array:
+def get_signal(h: float, length: int, s: int, normalize=False) -> np.array:
     """Get normalized signal."""
-    generator = KasdinGenerator(
-        h, length=length, filter_coefficients_length=s, normalize=True
+    generator = create_kasdin_generator(
+        h, length=length, filter_coefficients_length=s, normalize=normalize
     )
     signal = generator.get_full_sequence()
-    # normalisation
-    mean = np.nanmean(signal)
-    std = np.nanstd(signal)
-    return (signal - mean) / std - signal[0]
+    if not normalize:
+        return signal
 
 
-def get_gaps_signal(signal: np.array, gaps_parametr: float) -> np.array:
-    return add_poisson_gaps(signal, 0.1, gaps_parametr)[0]
-
-
-def restore_signal(orig_signal: np.array, signal: np.array, r: int) -> np.array:
+def apply_kalman_filter(
+    orig_signal: np.array, signal, model_h: np.array, r: int, noise=None
+) -> np.array:
     f = EnhancedKalmanFilter(dim_x=r, dim_z=1)
-    f.auto_configure(orig_signal, np.zeros(len(orig_signal)))
-    recovered_signal = np.zeros(len(signal))
+    if noise is None:
+        noise = np.zeros(len(orig_signal))
+    f.set_parameters(model_h, np.std(noise) ** 2, kasdin_lenght=len(signal), order=r)
+    estimated_signal = np.zeros(len(signal))
     for k in range(1, len(signal)):
         f.predict()
         if not np.isnan(signal[k]):
             f.update(signal[k])
-        recovered_signal[k] = f.x[0].item()
-    return recovered_signal
+        estimated_signal[k] = f.x[0].item()
+    return estimated_signal
 
 
 def get_metrics(orig_signal, restored_signal) -> dict:
-    h_restored = get_extra_h(restored_signal)
-    h_orig = get_extra_h(orig_signal)
+    h_restored = get_extra_h_dfa(restored_signal)
+    h_orig = get_extra_h_dfa(orig_signal)
     mse_restored = np.nanmean((orig_signal - restored_signal) ** 2)
     return {"H_restored": h_restored, "MSE": mse_restored, "H_signal": h_orig}
-
-
-def add_poisson_gaps(trajectory, gap_rate, length_rate):
-    """
-    Adds gaps to the trajectory according to the Poisson flow.
-
-    Parameters:
-    - trajectory: np.array, initial trajectory
-    - gap_rate: parameter for the Poisson flow of gaps (the more, the more frequent the gaps)
-    - length_rate: parameter for the Poisson distribution of gap lengths
-
-    Returns:
-    - trajectory_with_gaps: np.array, trajectory with gaps
-    - gap_indices: list of tuples (start, end) of missed intervals
-    """
-    n = len(trajectory)
-    trajectory_with_gaps = trajectory.copy()
-    gap_indices = []
-    current_pos = 0
-    while current_pos < n:
-        interval = np.random.exponential(1 / gap_rate)
-        current_pos += int(interval)
-        if current_pos >= n:
-            break
-        length = np.random.poisson(length_rate)
-        if length <= 0:
-            length = 1
-        end_pos = min(current_pos + length, n)
-        trajectory_with_gaps[current_pos:end_pos] = np.nan
-        gap_indices.append((current_pos, end_pos))
-        current_pos = end_pos
-    return trajectory_with_gaps, gap_indices
 
 
 def is_difference_less_or_equal(a, b, percent):
@@ -202,6 +145,6 @@ if __name__ == "__main__":
                 row["gaps_len"],
                 row["MSE"],
             ]
-    file_name = "kalman-beta-75.csv"
+    file_name = "kalman-beta.csv"
     metrics_df.to_csv(file_name, index=False)
     print(f"Matrics saved to {file_name}")
