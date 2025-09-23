@@ -8,7 +8,7 @@ from StatTools.filters.symbolic_kalman import (
     get_sympy_filter_matrix,
     refine_filter_matrix,
 )
-from StatTools.generators.kasdin_generator import KasdinGenerator
+from StatTools.generators.kasdin_generator import create_kasdin_generator
 
 
 class EnhancedKalmanFilter(KalmanFilter):
@@ -92,7 +92,7 @@ class EnhancedKalmanFilter(KalmanFilter):
         """
         dfa = DFA(signal)
         h = dfa.find_h()
-        generator = KasdinGenerator(h, length=signal.shape[0])
+        generator = create_kasdin_generator(h, length=signal.shape[0])
         return generator.get_filter_coefficients()
 
     def get_filter_matrix(
@@ -125,7 +125,7 @@ class EnhancedKalmanFilter(KalmanFilter):
             estimated from the signal's fractal properties.
 
         """
-        generator = KasdinGenerator(model_h, length=length)
+        generator = create_kasdin_generator(model_h, length=length)
         ar_filter = generator.get_filter_coefficients()
         if order == 1:
             # Simple position-velocity model
