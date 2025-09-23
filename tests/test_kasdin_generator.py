@@ -6,9 +6,8 @@ import pytest
 from StatTools.experimental.analysis.tools import get_extra_h_dfa
 from StatTools.generators.kasdin_generator import create_kasdin_generator
 
-is_ci = os.getenv("CI") == "true"
-
-if is_ci:
+IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
+if IN_GITHUB_ACTIONS:
     h_list = [0.25, 1, 2, 3.5]
 else:
     h_list = np.arange(0.25, 3.75, 0.25)

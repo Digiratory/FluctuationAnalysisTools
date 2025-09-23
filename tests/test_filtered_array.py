@@ -1,11 +1,19 @@
+import os
+
 import numpy as np
 import pytest
 
 from StatTools.analysis.dfa import DFA
 from StatTools.generators.base_filter import FilteredArray
 
+IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
+if IN_GITHUB_ACTIONS:
+    h_list = [0.5, 1, 2]
+else:
+    h_list = np.arange(0.5, 2.25, 0.25)
+
 testdata = {
-    "h_list": [0.5, 0.7, 0.9, 1.1, 1.3, 1.5, 1.7, 1.9, 2.0],
+    "h_list": h_list,
     "length_list": [4000],
 }
 

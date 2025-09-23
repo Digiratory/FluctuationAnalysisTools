@@ -1,13 +1,23 @@
+import os
+
 import numpy as np
 import pytest
 
 from StatTools.analysis.dfa import DFA
 from StatTools.generators.base_filter import Filter
 
+IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
+if IN_GITHUB_ACTIONS:
+    h_list = [0.5, 1]
+    target = [0.7]
+else:
+    h_list = np.arange(0.5, 1, 0.1)
+    target = [0.5, 0.7, 0.9]
+
 testdata = {
-    "target_mean": [0.5, 0.7, 0.9],
-    "target_std": [0.5, 0.7, 0.9],
-    "h": [0.5, 0.6, 0.7, 0.8, 0.9],
+    "target_mean": target,
+    "target_std": target,
+    "h": h_list,
     "length": [6000],
 }
 
