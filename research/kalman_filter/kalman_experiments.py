@@ -46,7 +46,7 @@ def process_single_iter(args):
     return results_local
 
 
-def get_r_list() -> tuple:
+def get_r_list() -> list:
     return [2, 4, 8]
 
 
