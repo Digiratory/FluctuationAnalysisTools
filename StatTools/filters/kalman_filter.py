@@ -139,7 +139,7 @@ class FractalKalmanFilter(KalmanFilter):
         self,
         signal: NDArray[np.float64],
         noise: NDArray[np.float64],
-        dt: float = 1,
+        dt: float = 1.0,
         order: int = None,
     ):
         """
