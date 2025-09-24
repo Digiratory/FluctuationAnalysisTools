@@ -5,7 +5,7 @@ import pandas as pd
 
 from StatTools.experimental.analysis.tools import get_extra_h_dfa
 from StatTools.experimental.augmentation.perturbations import add_poisson_gaps
-from StatTools.filters.kalman_filter import EnhancedKalmanFilter
+from StatTools.filters.kalman_filter import FractalKalmanFilter
 from StatTools.generators.kasdin_generator import create_kasdin_generator
 
 
@@ -63,7 +63,7 @@ def get_signal(h: float, length: int, s: int, normalize=False) -> np.array:
 def apply_kalman_filter(
     orig_signal: np.array, signal, model_h: np.array, r: int, noise=None
 ) -> np.array:
-    f = EnhancedKalmanFilter(dim_x=r, dim_z=1)
+    f = FractalKalmanFilter(dim_x=r, dim_z=1)
     if noise is None:
         noise = np.zeros(len(orig_signal))
     f.set_parameters(model_h, np.std(noise) ** 2, kasdin_lenght=len(signal), order=r)

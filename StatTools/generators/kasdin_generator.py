@@ -98,8 +98,8 @@ class KasdinGenerator:
         return self.sequence
 
 
-class ExtendedKasdinGenerator(KasdinGenerator):
-    """Extended version of Kasdin generator, which can be used for H < 0.5 and H > 1.5"""
+class ERKasdinGenerator(KasdinGenerator):
+    """Extended range version of Kasdin generator, which can be used for H < 0.5 and H > 1.5"""
 
     def __init__(
         self,
@@ -149,11 +149,11 @@ def create_kasdin_generator(
     random_generator: Optional[Iterator[float]] = iter(np.random.randn, None),
     normalize=True,
     filter_coefficients_length=None,
-) -> KasdinGenerator | ExtendedKasdinGenerator:
+) -> KasdinGenerator | ERKasdinGenerator:
     if 0.5 <= h <= 1.5:
         return KasdinGenerator(
             h, length, random_generator, normalize, filter_coefficients_length
         )
-    return ExtendedKasdinGenerator(
+    return ERKasdinGenerator(
         h, length, random_generator, normalize, filter_coefficients_length
     )

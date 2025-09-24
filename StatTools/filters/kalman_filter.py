@@ -11,7 +11,7 @@ from StatTools.filters.symbolic_kalman import (
 from StatTools.generators.kasdin_generator import create_kasdin_generator
 
 
-class EnhancedKalmanFilter(KalmanFilter):
+class FractalKalmanFilter(KalmanFilter):
     """
     Advanced Kalman filter with automatic parameter estimation.
 
@@ -27,10 +27,10 @@ class EnhancedKalmanFilter(KalmanFilter):
     Basic usage:
         ```python
         import numpy as np
-        from StatTools.filters.kalman_filter import EnhancedKalmanFilter
+        from StatTools.filters.kalman_filter import FractalKalmanFilter
 
         # Create enhanced Kalman filter
-        kf = EnhancedKalmanFilter(dim_x=2, dim_z=1)
+        kf = FractalKalmanFilter(dim_x=2, dim_z=1)
 
         # Auto-configure using signal characteristics
         kf.auto_configure(
