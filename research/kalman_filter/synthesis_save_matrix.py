@@ -15,7 +15,7 @@ from StatTools.utils import io
 warnings.filterwarnings("ignore")
 
 
-def process_single_iter(args):
+def process_r(args):
     """
     Process one iteration with H and order.
 
@@ -23,21 +23,27 @@ def process_single_iter(args):
         h (float): Hurst exponent.
         r (int): filter order.
     """
-    h, r = args
-    file_path = Path("filter_matrices") / f"{h}_{r}.npy"
-    if file_path.is_file():
-        return file_path
+    h_list, r = args
+    results = []
+    matrix_file_path = Path("filter_matrices") / f"sympy_{r}.txt"
+    if matrix_file_path.is_file():
+        print(f"Loading sympy filter matrix r={r}")
+        sympy_filter_matrix = io.load_sympy_matrix(matrix_file_path)
+    else:
+        print(f"Getting sympy filter matrix r={r}")
+        sympy_filter_matrix = get_sympy_filter_matrix(r)
+        io.save_sympy_matrix(sympy_filter_matrix, matrix_file_path)
     length = r + 1
-
-    generator = create_kasdin_generator(h, length=length)
-    ar_filter = generator.get_filter_coefficients()
-    if r == 1:
-        # Simple position-velocity model
-        io.save_matrix(np.array([[1]]), file_path)
-        return file_path
-    number_matrix = refine_filter_matrix(get_sympy_filter_matrix(r), r, ar_filter)
-    io.save_matrix(np.array(number_matrix, dtype=np.float64), file_path)
-    return file_path
+    for h in h_list:
+        file_path = Path("filter_matrices") / f"{h}_{r}.npy"
+        results.append(file_path)
+        if file_path.is_file():
+            continue
+        generator = create_kasdin_generator(h, length=length)
+        ar_filter = generator.get_filter_coefficients()
+        number_matrix = refine_filter_matrix(sympy_filter_matrix, r, ar_filter)
+        io.save_np_matrix(np.array(number_matrix, dtype=np.float64), file_path)
+    return results
 
 
 if __name__ == "__main__":
@@ -45,21 +51,19 @@ if __name__ == "__main__":
     R_LIST = np.array([2**i for i in range(1, 8)])
     print(H_LIST, R_LIST)
     args_list = []
-    for h in H_LIST:
-        for r in R_LIST:
-            args_list.append((h, r))
-    print(f"Got {len(args_list)} combinations.")
+    for r in R_LIST:
+        args_list.append((H_LIST, r))
+
+    print(f"Got {len(H_LIST) * len(R_LIST)} combinations.")
 
     print("Run.")
-    # with multiprocessing.Pool() as pool:
-    #     results = list(
-    #         tqdm(
-    #             pool.imap_unordered(process_single_iter, args_list),
-    #             total=len(args_list),
-    #             desc="Progress",
-    #         )
-    #     )
-    for arg in tqdm(args_list):
-        process_single_iter(arg)
+    with multiprocessing.Pool() as pool:
+        results = list(
+            tqdm(
+                pool.imap_unordered(process_r, args_list),
+                total=len(args_list),
+                desc="Progress",
+            )
+        )
         
-    print("Done.")
+    print(f"Done. {len(results)} files.")
