@@ -1,13 +1,20 @@
 import multiprocessing
-
+import warnings
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 
 from StatTools.experimental.analysis.tools import get_extra_h_dfa
-from StatTools.experimental.augmentation.perturbations import add_poisson_gaps
+from StatTools.experimental.augmentation.perturbations import (
+    add_noise,
+    add_poisson_gaps,
+)
+from StatTools.experimental.analysis.tools import get_extra_h_dfa
+from StatTools.experimental.synthesis.tools import adjust_hurst_to_range, reverse_hurst_adjustment
 from StatTools.filters.kalman_filter import FractalKalmanFilter
 from StatTools.generators.kasdin_generator import create_kasdin_generator
 
+warnings.filterwarnings("ignore")
 
 def process_single_iter(args):
     """Обрабатывает одну итерацию с заданным H, s (порядок ФФ) и возвращает результаты"""
@@ -45,6 +52,37 @@ def process_single_iter(args):
                 )
     return results_local
 
+def process_snr_h_iter(args):
+    """Обрабатывает одну итерацию с заданным H, s (порядок ФФ), SNR n_times и возвращает результаты"""
+    h, s, r_list, trj_len, snr, n_times = args
+    results_local = []
+
+    for _ in range(n_times):
+        signal = get_signal(h, trj_len, s, normalize=False)
+        h_s = get_extra_h_dfa(signal)
+        adjusted_signal, applied_steps = adjust_hurst_to_range(signal)
+        noisy_signal, noise = add_noise(adjusted_signal, ratio=snr)
+        for r in r_list:
+            estimated_signal = apply_kalman_filter(
+                adjusted_signal, noisy_signal, h, r, noise
+            )
+            estimated_signal = reverse_hurst_adjustment(estimated_signal, applied_steps)
+            se = np.nanstd(signal[0 : len(estimated_signal)] - estimated_signal)
+            h_est = get_extra_h_dfa(estimated_signal)
+            results_local.append(
+                    {
+                        "H_target":h,
+                        "H_signal":h_s,
+                        "H_estimated": h_est,
+                        "signal_len":len(signal),
+                        "s":s,
+                        "r":r,
+                        "SNR":snr,
+                        "SE":se,
+                    })
+    return results_local
+    
+    
 
 def get_r_list() -> list:
     return [2, 4, 8]
@@ -102,49 +140,101 @@ def get_s_list(length: int) -> list:
     return list(range(1, 9)) + [length]
 
 
+# H_LIST = np.arange(0.5, 5.25, 0.25)
+# TRJ_LEN = 2**12
+# n_times = 5
+# print(H_LIST, TRJ_LEN)
+# metrics_df = pd.DataFrame(
+#     columns=[
+#         "H_target",
+#         "H_signal",
+#         "H_restored",
+#         "signal_len",
+#         "s",
+#         "r",
+#         "gaps",
+#         "MSE",
+#     ]
+# )
+# print("Prepare args...")
+# args_list = []
+# r_list = get_r_list()
+# s_list = get_s_list(TRJ_LEN)
+# for h in H_LIST:
+#     for s in s_list:
+#         args_list.append((h, s, r_list, TRJ_LEN, n_times))
+# print(f"Got {len(args_list) * len(r_list)} combinations for {n_times} times.")
+
+# print("Run pool")
+# with multiprocessing.Pool() as pool:
+#     results = pool.map(process_single_iter, args_list)
+
+# print("Prepare results")
+# for res in results:
+#     for row in res:
+#         metrics_df.loc[len(metrics_df)] = [
+#             row["h"],
+#             row["H_signal"],
+#             row["H_restored"],
+#             row["signal_length"],
+#             row["s"],
+#             row["r"],
+#             row["gaps_len"],
+#             row["MSE"],
+#         ]
+# file_name = "kalman-beta.csv"
+# metrics_df.to_csv(file_name, index=False)
+# print(f"Metrics saved to {file_name}")
+
 if __name__ == "__main__":
-    H_LIST = np.arange(0.5, 5.25, 0.25)
-    TRJ_LEN = 2**12
-    n_times = 5
-    print(H_LIST, TRJ_LEN)
+    print("Prepare args...")
+    args_list = []
+    H_LIST = np.arange(0.5, 3.75, 0.25)
+    R_LIST = np.array([2**i for i in range(1, 3)])
+    TRJ_LEN = 2**14
+    n_times = 1
+    s = TRJ_LEN
+    snr = 0.5
     metrics_df = pd.DataFrame(
         columns=[
             "H_target",
             "H_signal",
-            "H_restored",
+            "H_estimated",
             "signal_len",
             "s",
             "r",
-            "gaps",
-            "MSE",
+            "SNR",
+            "SE",
         ]
     )
-    print("Prepare args...")
-    args_list = []
-    r_list = get_r_list()
-    s_list = get_s_list(TRJ_LEN)
     for h in H_LIST:
-        for s in s_list:
-            args_list.append((h, s, r_list, TRJ_LEN, n_times))
-    print(f"Got {len(args_list) * len(r_list)} combinations for {n_times} times.")
-
+        args_list.append((h, s, R_LIST, TRJ_LEN, snr, n_times))
+    print(f"Got {len(args_list) * len(R_LIST)} combinations for {n_times} times.")
+    
     print("Run pool")
     with multiprocessing.Pool() as pool:
-        results = pool.map(process_single_iter, args_list)
-
+        results = list(
+            tqdm(
+                pool.imap_unordered(process_snr_h_iter, args_list),
+                total=len(args_list),
+                desc="Progress",
+            )
+        )
+    
     print("Prepare results")
     for res in results:
         for row in res:
             metrics_df.loc[len(metrics_df)] = [
-                row["h"],
+                row["H_target"],
                 row["H_signal"],
-                row["H_restored"],
-                row["signal_length"],
+                row["H_estimated"],
+                row["signal_len"],
                 row["s"],
                 row["r"],
-                row["gaps_len"],
-                row["MSE"],
+                row["SNR"],
+                row["SE"],
             ]
-    file_name = "kalman-beta.csv"
+    file_name = "kalman.csv"
     metrics_df.to_csv(file_name, index=False)
-    print(f"Matrics saved to {file_name}")
+    print(f"Metrics saved to {file_name}")
+    

@@ -7,7 +7,9 @@ from sympy import (
     symbols,
 )
 
+from functools import lru_cache
 
+@lru_cache(maxsize=None)
 def nth_order_derivative(n: int, k):
     """Get the nth order derivative of x(k)."""
     x = Function("x")
@@ -27,7 +29,7 @@ def get_all_coeffs(expr, n: int) -> dict:
             coeffs[i] = simplify(term)
     return coeffs
 
-
+@lru_cache(maxsize=None)
 def Fmij_formula(n: int, i: int, j: int):
     """Get the (i,j) element of the matrix."""
     k = symbols("k")
