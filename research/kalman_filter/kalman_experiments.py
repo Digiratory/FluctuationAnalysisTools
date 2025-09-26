@@ -1,5 +1,6 @@
 import multiprocessing
 import warnings
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -69,9 +70,7 @@ def process_snr_h_iter(args):
         adjusted_signal, applied_steps = adjust_hurst_to_range(signal)
         noisy_signal, noise = add_noise(adjusted_signal, ratio=snr)
         for r in r_list:
-            estimated_signal = apply_kalman_filter(
-                adjusted_signal, noisy_signal, h, r, noise
-            )
+            estimated_signal = apply_kalman_filter(noisy_signal, h, r, noise)
             estimated_signal = reverse_hurst_adjustment(estimated_signal, applied_steps)
             se = np.nanstd(signal[0 : len(estimated_signal)] - estimated_signal)
             h_est = get_extra_h_dfa(estimated_signal)
@@ -91,7 +90,7 @@ def process_snr_h_iter(args):
 
 
 def get_r_list() -> list:
-    return [2, 4, 8]
+    return np.array([2**i for i in range(1, 6)])
 
 
 def get_signal(h: float, length: int, s: int, normalize=False) -> np.array:
@@ -124,13 +123,13 @@ def apply_kalman_filter(signal, model_h: np.array, r: int, noise=None) -> np.arr
 
 
 def apply_kalman_filter_cached(
-    signal, model_h: np.array, r: int, cache_folder: str, noise=None
+    signal, model_h: np.array, r: int, cache_folder: Path, noise=None
 ) -> np.array:
     f = FractalKalmanFilter(dim_x=r, dim_z=1)
     if noise is None:
         noise = np.zeros(len(signal))
     file_path = cache_folder / f"{model_h}_{r}.npy"
-    f_matrix = io.load_matrix(file_path)
+    f_matrix = io.load_np_matrix(file_path)
     r_matrix = np.std(noise) ** 2
     h_matrix = f.H
     h_matrix[0][0] = 1.0
@@ -217,54 +216,54 @@ def get_s_list(length: int) -> list:
 # metrics_df.to_csv(file_name, index=False)
 # print(f"Metrics saved to {file_name}")
 
-if __name__ == "__main__":
-    print("Prepare args...")
-    args_list = []
-    H_LIST = np.arange(0.5, 3.75, 0.25)
-    R_LIST = np.array([2**i for i in range(1, 3)])
-    TRJ_LEN = 2**14
-    n_times = 1
-    s = TRJ_LEN
-    snr = 0.5
-    metrics_df = pd.DataFrame(
-        columns=[
-            "H_target",
-            "H_signal",
-            "H_estimated",
-            "signal_len",
-            "s",
-            "r",
-            "SNR",
-            "SE",
-        ]
-    )
-    for h in H_LIST:
-        args_list.append((h, s, R_LIST, TRJ_LEN, snr, n_times))
-    print(f"Got {len(args_list) * len(R_LIST)} combinations for {n_times} times.")
+# if __name__ == "__main__":
+#     print("Prepare args...")
+#     args_list = []
+#     H_LIST = np.arange(0.5, 3.75, 0.25)
+#     R_LIST = np.array([2**i for i in range(1, 3)])
+#     TRJ_LEN = 2**14
+#     n_times = 1
+#     s = TRJ_LEN
+#     snr = 0.5
+#     metrics_df = pd.DataFrame(
+#         columns=[
+#             "H_target",
+#             "H_signal",
+#             "H_estimated",
+#             "signal_len",
+#             "s",
+#             "r",
+#             "SNR",
+#             "SE",
+#         ]
+#     )
+#     for h in H_LIST:
+#         args_list.append((h, s, R_LIST, TRJ_LEN, snr, n_times))
+#     print(f"Got {len(args_list) * len(R_LIST)} combinations for {n_times} times.")
 
-    print("Run pool")
-    with multiprocessing.Pool() as pool:
-        results = list(
-            tqdm(
-                pool.imap_unordered(process_snr_h_iter, args_list),
-                total=len(args_list),
-                desc="Progress",
-            )
-        )
+#     print("Run pool")
+#     with multiprocessing.Pool() as pool:
+#         results = list(
+#             tqdm(
+#                 pool.imap_unordered(process_snr_h_iter, args_list),
+#                 total=len(args_list),
+#                 desc="Progress",
+#             )
+#         )
 
-    print("Prepare results")
-    for res in results:
-        for row in res:
-            metrics_df.loc[len(metrics_df)] = [
-                row["H_target"],
-                row["H_signal"],
-                row["H_estimated"],
-                row["signal_len"],
-                row["s"],
-                row["r"],
-                row["SNR"],
-                row["SE"],
-            ]
-    file_name = "kalman.csv"
-    metrics_df.to_csv(file_name, index=False)
-    print(f"Metrics saved to {file_name}")
+#     print("Prepare results")
+#     for res in results:
+#         for row in res:
+#             metrics_df.loc[len(metrics_df)] = [
+#                 row["H_target"],
+#                 row["H_signal"],
+#                 row["H_estimated"],
+#                 row["signal_len"],
+#                 row["s"],
+#                 row["r"],
+#                 row["SNR"],
+#                 row["SE"],
+#             ]
+#     file_name = "kalman.csv"
+#     metrics_df.to_csv(file_name, index=False)
+#     print(f"Metrics saved to {file_name}")
