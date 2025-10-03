@@ -27,30 +27,37 @@ kalman_cache_folder = Path("/home/jovyan/git/FluctuationAnalysisTools/filter_mat
 def process_snr_h_iter(args):
     """Обрабатывает одну итерацию с заданным H, s (порядок ФФ), SNR n_times и возвращает результаты"""
     h, s, r_list, trj_len, snr, n_times = args
+    h_list = np.arange(0.5, 3.75, 0.25)
+    
     results_local = []
 
     for _ in range(n_times):
-        signal = get_signal(h, trj_len, s, normalize=True)
+        signal = get_signal(h, TRJ_LEN, s, normalize=False)
+        signal -= np.mean(signal)
+        signal /= np.std(signal)
+        signal -= signal[0]
         h_s = get_extra_h_dfa(signal)
         adjusted_signal, applied_steps = adjust_hurst_to_range(signal)
         noisy_signal, noise = add_noise(adjusted_signal, ratio=snr)
         for r in r_list:
-            estimated_signal = apply_kalman_filter_cached(noisy_signal, model_h=h, r=r, noise=noise, cache_folder=kalman_cache_folder)
-            estimated_signal = reverse_hurst_adjustment(estimated_signal, applied_steps)
-            se = np.nanstd(signal[0 : len(estimated_signal)] - estimated_signal)
-            h_est = get_extra_h_dfa(estimated_signal)
-            results_local.append(
-                {
-                    "H_target": h,
-                    "H_signal": h_s,
-                    "H_estimated": h_est,
-                    "signal_len": len(signal),
-                    "s": s,
-                    "r": r,
-                    "SNR": snr,
-                    "SE": se,
-                }
-            )
+            for model_h in h_list:
+                estimated_signal = apply_kalman_filter_cached(noisy_signal, model_h=model_h, r=r, noise=noise, cache_folder=kalman_cache_folder)
+                estimated_signal = reverse_hurst_adjustment(estimated_signal, applied_steps)
+                se = np.nanstd(signal[0 : len(estimated_signal)] - estimated_signal)
+                h_est = get_extra_h_dfa(estimated_signal)
+                results_local.append(
+                    {
+                        "H_target": h,
+                        "H_signal": h_s,
+                        "H_estimated": h_est,
+                        "signal_len": len(signal),
+                        "s": s,
+                        "r": r,
+                        "SNR": snr,
+                        "SE": se,
+                        "H_kalman": model_h
+                    }
+                )
     return results_local
 
 
@@ -99,7 +106,7 @@ def apply_kalman_filter_cached(
     f.set_matrices(h_matrix, r_matrix, f_matrix)
 
     estimated_signal = np.zeros(len(signal))
-    for k in range(1, len(signal)):
+    for k in range(0, len(signal)):
         f.predict()
         if not np.isnan(signal[k]):
             f.update(signal[k])
@@ -137,11 +144,11 @@ if __name__ == "__main__":
     print("Prepare args...")
     args_list = []
     H_LIST = np.arange(0.5, 3.75, 0.25)
-    R_LIST = np.array([2**i for i in range(1, 6)])
+    R_LIST = [4] #np.array([2**i for i in range(1, 6)])
     TRJ_LEN = 2**14
-    n_times = 10
+    n_times = 5
     s = TRJ_LEN
-    SNR_LIST = [0.1, 0.5, 1, 2]
+    SNR_LIST = [0.5] #[0.1, 0.5, 1, 2]
     metrics_df = pd.DataFrame(
         columns=[
             "H_target",
@@ -152,6 +159,7 @@ if __name__ == "__main__":
             "r",
             "SNR",
             "SE",
+            "H_kalman"
         ]
     )
     for snr in SNR_LIST:
@@ -181,7 +189,8 @@ if __name__ == "__main__":
                 row["r"],
                 row["SNR"],
                 row["SE"],
+                row["H_kalman"],
             ]
-    file_name = "kalman.csv"
+    file_name = "kalman-4.csv"
     metrics_df.to_csv(file_name, index=False)
     print(f"Metrics saved to {file_name}")
