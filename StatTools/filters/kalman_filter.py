@@ -153,24 +153,20 @@ class FractalKalmanFilter(KalmanFilter):
             ar_vector(NDArray[np.float64]): Autoregressive filter coefficients
         """
         # TODO: add Q matrix auto configuration
-        self.H[0][0] = 1.0
-        model_h = get_extra_h_dfa(signal)
-        noise_var = np.std(noise) ** 2
-        kasdin_lenght = len(signal)
-        self.set_parameters(model_h, noise_var, kasdin_lenght, dt, order)
-
-    def set_parameters(
-        self,
-        model_h,
-        noise_var: float | list[float],
-        kasdin_lenght: int,
-        dt: float = 1,
-        order: int = None,
-    ):
         if order is None:
             order = self.dim_x
-        if isinstance(noise_var, list):
-            raise NotImplementedError("Only for 1d data")
-        self.H[0][0] = 1.0
-        self.R = noise_var
-        self.F = self.get_filter_matrix(order, model_h, kasdin_lenght, dt)
+        model_h = get_extra_h_dfa(signal)
+        kasdin_lenght = len(signal)
+
+        f_matrix = self.get_filter_matrix(order, model_h, kasdin_lenght, dt)
+        r_matrix = np.std(noise) ** 2
+        h_matrix = self.H
+        h_matrix[0][0] = 1.0
+        self.set_matrices(h_matrix, r_matrix, f_matrix)
+
+    def set_matrices(self, h_matrix, r_matrix, f_matrix):
+        if isinstance(r_matrix, list):
+            raise NotImplementedError("R error. Only for 1d data")
+        self.H = h_matrix
+        self.R = r_matrix
+        self.F = f_matrix
