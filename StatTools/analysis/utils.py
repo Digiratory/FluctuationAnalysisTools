@@ -38,13 +38,35 @@ class Crossover:
             np.log(1 + np.exp(R * (x - C))) / R * (-(x - C)) / np.sqrt(1 + (x - C) ** 2)
         )
 
+    def tf_minus_inf(self, x, R, C1):
+        return self.rev_f_fcn(x, R, C1)
+
+    def tf_plus_inf(self, x, R, C2):
+        return self.f_fcn(x, R, C2)
+
     def tf(self, x, R, C1, C2):
         """
         Step function
         """
-        return -self.f_fcn(x, R, C2) - self.rev_f_fcn(x, R, C1)
+        if C1 <= float("-inf"):
+            return self.tf_minus_inf(x, R, C1)
+        elif C2 >= float("inf"):
+            return self.tf_plus_inf(x, R, C2)
+        else:
+            return -self.f_fcn(x, R, C2) - self.rev_f_fcn(x, R, C1)
 
-    def single_cross_fcn(self, x, y_0, C_12, slope_1, slope_2, R_12):
+    def single_cross_fcn_sloped(self, x, y_0, C_12, slope_1, slope_2, R_12):
+
+        value = None
+        value = (slope_1 * self.tf(0, R_12, -100, C_12)) - (
+            slope_2 * self.tf(0, R_12, C_12, 100)
+        )
+        # value=(slope_1*tf(C_12, R_12, C_12, -100))-(slope_2 * tf(x, R_12, C_12, 100))
+        func1 = slope_1 * (self.tf(x, R_12, -100, C_12))
+        func2 = slope_2 * self.tf(x, R_12, C_12, 100)
+        return y_0 + func1 + func2 - value
+
+    def single_cross_fcn(self, x, y_0, C_12, slope_1, slope_2, R_12, R_23, C_23):
         """
         Creates piesewise linear function with slopes definition
         """
@@ -54,7 +76,7 @@ class Crossover:
             + slope_2 * self.tf(x, R_12, C_12, 100)
         )
 
-    def analyse_dfa(self, hs, S):
+    def analyse_ff(self, hs, S):
         """
         Analyses real data: F(s) and s and simulated data with linear regression's model.
         """
