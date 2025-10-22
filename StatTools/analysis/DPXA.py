@@ -4,16 +4,16 @@ import numpy as np
 from analysis import dpcca
 
 
-def dpcca_with_lags(
+def dpxa(
     arr: np.ndarray, pd: int, step: float, s: Union[int, list, np.ndarray], maxlag: int
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     DPCCA with time lags: DPXA.
     Returns:
-        P_lag: [N_signals-coordinates of pigeons, N_signals-, len(s)] — maximum cross correlation with definite time lag,
+        P_lag: [N_signals-coordinates of p, N_signals- value of signals, len(s)] — maximum cross correlation with definite time lag,
         T_lag: [N_signals, N_signals, len(s)] — the best time lag tau with maximum cross correlation,
         S: time scales.
-    Input: N- data coordinates of pigeons and coordinates of pigeons with time lag
+    Input: N- data coordinates of signals and coordinates of signals with time lag
         S-array of time scales
         L-time points
         num_scales- value of time scales
@@ -22,7 +22,7 @@ def dpcca_with_lags(
         ValueError: All input S values are larger than vector shape / 4.
         ValueError: Cannot use S > L / 4.
     P_tau-array of cross correlation for N coordinates and N+tau/N-tau coordinates for each time scale
-    P_tau- in array with pigeon's data with realization in each time lag finds fluctuation function
+    P_tau- in array with signal's data with realization in each time lag finds fluctuation function
     between N and N+-tau lag: cross correlation
     best_lag_idx - time lag where cross correlation is maximum in each time scale
     """
@@ -43,7 +43,7 @@ def dpcca_with_lags(
         P_tau = np.full((N, N, len(lags)), np.nan)
 
         for lag_idx, tau in enumerate(lags):
-            X_shifted = array_with_tau(arr, tau)
+            X_shifted = array_with_delay(arr, tau)
             try:
                 P_ij, _, _, _ = dpcca([S_val], X_shifted, step, pd)
                 P_tau[:, :, lag_idx] = P_ij[0]
@@ -65,7 +65,7 @@ def dpcca_with_lags(
     return P_lag, T_lag, None, s
 
 
-def array_with_tau(arr: np.ndarray, tau: int) -> np.ndarray:
+def array_with_delay(arr: np.ndarray, tau: int) -> np.ndarray:
     """
     Returns:
         New array with time lags, in new array shifted data is Nan
