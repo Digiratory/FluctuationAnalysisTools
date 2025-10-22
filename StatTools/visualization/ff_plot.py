@@ -18,7 +18,7 @@ def plot_single_cross_result():
     slope_2_1 = 1
     slope_2_2 = 4
     R_1 = 5
-    R_2 = 1
+    R_2 = 2
     x = np.linspace(0, 50, num=101, endpoint=True)
     y_1 = single_cross_fcn_sloped(x, intercept, C_12, slope_1, slope_2_1, R_1)
     y_2 = single_cross_fcn_sloped(x, intercept, C_12, slope_1, slope_2_2, R_2)
