@@ -81,7 +81,7 @@ def tf_plus_inf(x, R, C2):
 
 def tf(x, R, C1, C2):
     """
-    Function which can be used as base element fro fluctuation characteristic approximation.
+    Function which can be used as base element for fluctuation characteristic approximation.
 
     Args:
         x(Union[int, Iterable]): points where fluctuation function F(s) is calculated in (+inference).
