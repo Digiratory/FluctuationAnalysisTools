@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
+from pytest import approx
 
 from StatTools.analysis.utils import (
     analyse_cross_ff,
@@ -9,9 +10,10 @@ from StatTools.analysis.utils import (
 
 
 def test_multiple_crossovers_utils():
-    slope_ij = [1, 4, 3]
+    slope_ij = [1, 2, 3]
     C_ij = [5, 6]
     R_ij = [5, 4, 1]
+    y = [0]
     tst_s = np.array(
         [0.01, 0.1, 0.3, 0.5, 1, 1.5, 2.5, 5, 7.5, 10, 15, 20, 50, 100, 250, 500, 1000]
     )
@@ -34,10 +36,6 @@ def test_multiple_crossovers_utils():
     )
     tst_hr = 1 + np.random.lognormal(0, 0.3, (20, len(ff)))
     tst_hr *= ff
-    _, _, ff_params, _ = analyse_cross_ff(tst_hr, tst_s)
-    assert_allclose(
-        ff_params.slope_current.value,
-        slope_ij,
-        rtol=0.1,
-        atol=0.3,
-    )
+    ff_params, _ = analyse_cross_ff(tst_hr, tst_s)
+
+    assert ff_params.cross[0].value == approx(C_ij[0])

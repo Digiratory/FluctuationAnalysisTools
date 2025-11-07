@@ -7,7 +7,7 @@ def f_fcn_without_ooverflaw(x):
     We will carry out transformations of the logarithm in function.
 
     Args:
-      x(Union[int, Iterable]): points where  fluctuation function F(s) is calculated.
+      x(np.nadarray): points where  fluctuation function F(s) is calculated.
 
     Returns:
       float: The return transformed values of the logarithm.
@@ -20,7 +20,7 @@ def f_fcn(x, R, C):
     Function based on ReLu type function.
 
     Args:
-      x(Union[int, Iterable]): points where  fluctuation function F(s) is calculated.
+      x(np.nadarray): points where  fluctuation function F(s) is calculated.
       R(int): coefficient which is proportonal to sharpness (rigidity) of a DFA crossover.
       C(int): position of the crossover.
 
@@ -37,7 +37,7 @@ def rev_f_fcn(x, R, C):
     Reversed function based on ReLu type function.
 
     Args:
-      x(Union[int, Iterable]): points where  fluctuation function F(s) is calculated.
+      x(np.nadarray): points where  fluctuation function F(s) is calculated.
       R(int): coefficient which is proportonal to sharpness (rigidity) of a DFA crossover.
       C(int): position of the crossover.
 
@@ -54,9 +54,9 @@ def tf_minus_inf(x, R, C1):
     Function when x= -inference that conditions are imposed on: in function remains rev_f_fcn part.
 
     Args:
-        (Union[int, Iterable]): points where  fluctuation function F(s) is calculated in (-inference).
-        R(int): coefficient which is proportonal to sharpness (rigidity) of a DFA crossover.
-        C1(int): position of the crossover.
+        x (np.nadarray): points where  fluctuation function F(s) is calculated in (-inference).
+        R (int): coefficient which is proportonal to sharpness (rigidity) of a DFA crossover.
+        C1 (int): position of the crossover.
 
     Returns:
         float: The return value of function with current values of x,C1 and R.
@@ -69,7 +69,7 @@ def tf_plus_inf(x, R, C2):
     Function when x= +inference that conditions are imposed on: in function remains f_fcn part.
 
     Args:
-        x(Union[int, Iterable]): points where fluctuation function F(s) is calculated in (+inference).
+        x(np.nadarray): points where fluctuation function F(s) is calculated in (+inference).
         R(int): coefficient which is proportonal to sharpness (rigidity) of a DFA crossover.
         C2(int): position of the crossover.
 
@@ -84,7 +84,7 @@ def tf(x, R, C1, C2):
     Function which can be used as base element for fluctuation characteristic approximation.
 
     Args:
-        x(Union[int, Iterable]): points where fluctuation function F(s) is calculated in (+inference).
+        x(np.nadarray): points where fluctuation function F(s) is calculated in (+inference).
         R(int): coefficient which is proportonal to sharpness (rigidity) of a DFA crossover.
         C1(int): posititon of the crossover.
         C2(int): position of the crossover.
