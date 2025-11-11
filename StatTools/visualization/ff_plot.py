@@ -16,7 +16,7 @@ def plot_cross_result():
     slope = [2, 1]
     R = [5, 2]
     fig, axs = plt.subplots(1, 2, figsize=(30, 10), sharey=False)
-    change_cross_value = partial(cross_fcn_sloped, crossover_amount=2)
+    change_cross_value = partial(cross_fcn_sloped, crossover_amount=1)
     axs[0].axhline(y=0, color="r", linestyle="--", label="y0")
     axs[0].plot(
         t,
@@ -26,7 +26,7 @@ def plot_cross_result():
             C_ij_multiple,
             slope_ij_multiple,
             R_ij_multiple,
-            crossover_amount=2,
+            crossover_amount=1,
         ),
         label="multiple crossovers",
     )
@@ -45,19 +45,24 @@ def plot_cross_result():
 
 
 def plot_ff(
-    hs: np.ndarray, S: np.ndarray, ff_parameter: ff_params, residuals=None, title="F(S)"
+    hs: np.ndarray,
+    S: np.ndarray,
+    ff_parameter: ff_params,
+    residuals=None,
+    # title="F(S)",
+    ax=None,
 ):
     # if len(residuals.shape) == 1:
     #     residuals = np.expand_dims(residuals, -1)
-
-    fig, ax = plt.subplots(figsize=(30, 10))
-    ax.set_title(title)
-    ax.set_title(title)
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(30, 10))
+    # ax.set_title(title)
+    # ax.set_title(title)
     slopes = [slp.value for slp in ff_parameter.slopes]
-    crossovers = [np.log10(cross.value) for cross in ff_parameter.cross]
+    crossovers = [cross.value for cross in ff_parameter.cross]
     R = [r.value for r in ff_parameter.ridigity]
     intercept = (ff_parameter.intercept.value,)
-    all_values = crossovers + slopes + R
+    all_values = [np.log10(c) for c in crossovers] + slopes + R
     fit_func = 10 ** cross_fcn_sloped(
         np.log10(S),
         intercept,
@@ -82,12 +87,12 @@ def plot_ff(
         )
 
     S_new = np.repeat(S[:, np.newaxis], hs.shape[0], 1).T
-    colors = ["blue", "green", "red", "purple"]
+    # colors = ["blue", "green", "red", "purple"]
     array_for_limits = [-np.inf] + list(crossovers) + [+np.inf]
     for plot_value in range(len(slopes)):
         current_lim = array_for_limits[plot_value]
         next_lim = array_for_limits[plot_value + 1]
-        mask = (np.log10(S_new) > current_lim) & (np.log10(S_new) <= next_lim)
+        mask = (S_new > current_lim) & (S_new <= next_lim)
         ax.plot(
             S_new[mask],
             hs[mask],
@@ -115,11 +120,13 @@ def plot_ff(
     #     label=rf"$H_2(S) \sim {slopes[2]:.2f}  \cdot S$",
     # )
     for c in ff_parameter.cross:
-        ax.axvline(c.value, color="k", linestyle="--", label=f"Cross at $S={c.value}$")
+        ax.axvline(
+            c.value, color="k", linestyle="--", label=f"Cross at $S={c.value:.2f}$"
+        )
 
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.grid(which="both")
     ax.legend()
 
-    plt.show()
+    return ax

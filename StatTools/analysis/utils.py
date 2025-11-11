@@ -80,7 +80,7 @@ def get_number_parameter_by_number_crossovers(n: int) -> tuple[int, int, int]:
 def analyse_cross_ff(
     hs: np.ndarray,
     S: np.ndarray,
-    crossover_amount=2,
+    crossover_amount,
     max_ridigity: float = +np.inf,
     min_ridigity: float = 1,
     min_slope_current: float = 0,
@@ -126,7 +126,7 @@ def analyse_cross_ff(
     # S=S
     # hs=hs
     s = np.repeat(S[:, np.newaxis], hs.shape[0], 1).T
-    change_cross_value = partial(cross_fcn_sloped, crossover_amount=2)
+    change_cross_value = partial(cross_fcn_sloped, crossover_amount=1)
     # po = (0, np.log10(S[len(S) // 3]), np.log10(S[2 * len(S) // 3]), 1, 1, 1, 5, 5, 5)
     s_count, r_count = get_number_parameter_by_number_crossovers(crossover_amount)
 
@@ -196,7 +196,7 @@ def analyse_cross_ff(
 
     intercept_value = popt[0]
     intercept_err = stderr[0]
-    cross_values = popt[1 : crossover_amount + 1]
+    cross_values = 10 ** popt[1 : crossover_amount + 1]
     slope_values = popt[crossover_amount + 1 : 2 * crossover_amount + 2]
     slope_errs = stderr[crossover_amount + 1 : 2 * crossover_amount + 2]
     ridigity_values = popt[2 * crossover_amount + 2 :]
