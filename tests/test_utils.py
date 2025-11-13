@@ -20,6 +20,12 @@ IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
 
 @pytest.mark.parametrize("arguments", testdata)
 def test_multiple_crossovers_utils(arguments):
+    """Tests fluctuation function approximation with multiple crossovers.
+
+    This test generates synthetic fluctuation function data with known Hurst coefficients
+    and crossover points, adds noise, fits the model, and verifies that the fitted slopes
+    match the true values within a relative tolerance.
+    """
     C_ij, slope_ij, R_ij = arguments
     C_ij_log = list(np.log10(C_ij))
     y = [0]
@@ -27,10 +33,6 @@ def test_multiple_crossovers_utils(arguments):
     tst_s = np.array(
         [0.01, 0.1, 0.3, 0.5, 1, 1.5, 2.5, 5, 7.5, 10, 15, 20, 50, 100, 250, 500, 1000]
     )
-    """
-    Test function which can be used as base element for fluctuation characteristic approximation with several Hurst
-    coefficients with signals of known Hurst exponent.
-    """
     ff = 10 ** cross_fcn_sloped(
         np.log10(tst_s),
         0,
@@ -38,12 +40,9 @@ def test_multiple_crossovers_utils(arguments):
         crossover_amount=len(C_ij),
     )
 
-    # tst_h_multiple = tst_hr_multiple_approx * tst_h_multiple
     tst_hr = 1 + np.random.normal(0, 0.01, (20, len(ff)))
     tst_hr = ff * tst_hr
     ff_params_new, _ = analyse_cross_ff(tst_hr, tst_s, crossover_amount=len(C_ij))
     for i, j in zip(ff_params_new.slopes, slope_ij):
-        #     #  j=np.log10(j)
-        #      assert i.value== pytest.approx(j)
-        # np.testing.assert_allclose(np.array(ff_params_new.slopes), slope_ij, rtol=1e-5, atol=0)
+
         assert i.value == pytest.approx(j, rel=0.2)

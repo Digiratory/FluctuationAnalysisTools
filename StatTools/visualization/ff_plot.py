@@ -6,58 +6,31 @@ import numpy as np
 from StatTools.analysis.utils import analyse_cross_ff, cross_fcn_sloped, ff_params
 
 
-def plot_cross_result():
-    t = np.linspace(0, 50, num=101, endpoint=True)
-    slope_ij_multiple = [1, 6, 3, 1, 6]
-    C_ij_multiple = [5, 6, 15, 20]
-    R_ij_multiple = [5, 7, 1, 2, 1]
-    intercept = 0
-    C = [4]
-    slope = [2, 1]
-    R = [5, 2]
-    fig, axs = plt.subplots(1, 2, figsize=(30, 10), sharey=False)
-    change_cross_value = partial(cross_fcn_sloped, crossover_amount=1)
-    axs[0].axhline(y=0, color="r", linestyle="--", label="y0")
-    axs[0].plot(
-        t,
-        change_cross_value(
-            t,
-            intercept,
-            C_ij_multiple,
-            slope_ij_multiple,
-            R_ij_multiple,
-            crossover_amount=1,
-        ),
-        label="multiple crossovers",
-    )
-    axs[0].axhline(y=0, color="b", linestyle="--", label="y0")
-    axs[1].plot(
-        t,
-        change_cross_value(t, 0, C, slope, R, crossover_amount=1),
-        label="single crossover",
-    )
-
-    plt.plot()
-    plt.grid()
-    plt.legend()
-    plt.xlim(0, 45)
-    plt.show()
-
-
 def plot_ff(
     hs: np.ndarray,
     S: np.ndarray,
     ff_parameter: ff_params,
     residuals=None,
-    # title="F(S)",
     ax=None,
 ):
-    # if len(residuals.shape) == 1:
-    #     residuals = np.expand_dims(residuals, -1)
+    """Plots the fluctuation function with fitted parameters and crossover points.
+
+    This function visualizes the fluctuation function data along with the fitted model,
+    including error bars if residuals are provided, and marks the crossover points.
+
+    Args:
+        hs (np.ndarray): The independent variable array, shape (k, M).
+        S (np.ndarray): The dependent data array, length M.
+        ff_parameter (ff_params): Fitted parameters from the fluctuation function analysis.
+        residuals (np.ndarray, optional): Residuals for plotting error bars. Defaults to None.
+        ax (matplotlib.axes.Axes, optional): Matplotlib axis to plot on. If None, creates a new figure. Defaults to None.
+
+    Returns:
+        matplotlib.axes.Axes: The matplotlib axis containing the plot.
+    """
+
     if ax is None:
         fig, ax = plt.subplots(figsize=(30, 10))
-    # ax.set_title(title)
-    # ax.set_title(title)
     slopes = [slp.value for slp in ff_parameter.slopes]
     crossovers = [cross.value for cross in ff_parameter.cross]
     R = [r.value for r in ff_parameter.ridigity]
@@ -87,7 +60,6 @@ def plot_ff(
         )
 
     S_new = np.repeat(S[:, np.newaxis], hs.shape[0], 1).T
-    # colors = ["blue", "green", "red", "purple"]
     array_for_limits = [-np.inf] + list(crossovers) + [+np.inf]
     for plot_value in range(len(slopes)):
         current_lim = array_for_limits[plot_value]
@@ -97,28 +69,9 @@ def plot_ff(
             S_new[mask],
             hs[mask],
             ".",
-            # color=colors[plot_value],
             label=rf"$H_0(S) \sim {slopes[plot_value]:.2f} \cdot S$",
         )
 
-    # if len(crossovers) > 1:
-    #     mask1 = (np.log10(S_new) > cross_log[0]) & (np.log10(S_new) <= cross_log[1])
-    #     ax.plot(
-    #         S_new[mask1],
-    #         hs[mask1],
-    #         ".",
-    #         color=colors[1],
-    #         label=rf"$H_1(S) \sim {slopes[1]:.2f} \cdot S$",
-    #     )
-    # mask2 = np.log10(S_new) > cross_log[-1]
-
-    # ax.plot(
-    #     S_new[mask2],
-    #     hs[mask2],
-    #     ".",
-    #     color=colors[2],
-    #     label=rf"$H_2(S) \sim {slopes[2]:.2f}  \cdot S$",
-    # )
     for c in ff_parameter.cross:
         ax.axvline(
             c.value, color="k", linestyle="--", label=f"Cross at $S={c.value:.2f}$"

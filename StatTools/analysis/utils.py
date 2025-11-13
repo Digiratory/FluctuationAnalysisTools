@@ -22,18 +22,19 @@ class ff_params:
 
 
 def cross_fcn_sloped(x, y_0, *args, crossover_amount: int):
-    """
-    Function which can be used as base element for fluctuation characteristic approximation with several Hurst
-    coefficients with levelling ...........????????????
+    """Computes the sloped crossover function for fluctuation characteristic approximation.
+
+    This function serves as the base element for approximating fluctuation characteristics
+    with multiple Hurst coefficients, incorporating crossover points.
 
     Args:
-      x(Union[int, Iterable]): points where  fluctuation function F(s) is calculated.
-      y_0(int): y-intecept for function.
-      *args: Variable length argument list.
-      crossover_amount(int): value of points where the Hurst coefficient has changed.
+        x (np.ndarray): Points where the fluctuation function F(s) is calculated.
+        y_0 (float): Y-intercept of the function.
+        *args: Variable length argument list containing crossover values, slopes, and rigidity parameters.
+        crossover_amount (int): Number of crossover points where the Hurst coefficient changes.
 
     Returns:
-      float: The return value of function with current input values.
+        np.ndarray: The computed function values at the given points.
     """
     crossovers = crossover_amount
     slopes_num = crossover_amount + 1
@@ -63,14 +64,13 @@ def cross_fcn_sloped(x, y_0, *args, crossover_amount: int):
 
 
 def get_number_parameter_by_number_crossovers(n: int) -> tuple[int, int, int]:
-    """
-    Function that returns value of each elements of fluctuation function
+    """Returns the number of slopes and rigidity parameters for a given number of crossovers.
 
     Args:
-     n(int): crossovers value.
+        n (int): The number of crossovers in the fluctuation function.
 
     Returns:
-     tuple[int,int]: number of slopes and ridigity, respectively
+        tuple[int, int]: A tuple containing the number of slopes and the number of rigidity parameters.
     """
     slopes = n + 1
     R = n + 1
@@ -88,33 +88,31 @@ def analyse_cross_ff(
     ridigity_initial_parameter: float = 1,
     slope_current_initial_parameter: float = 1,
 ) -> tuple[ff_params, np.ndarray]:
-    """Runs fluctuation characteristic approximation with several Hurst coefficients.
+    """Approximates the fluctuation function with multiple Hurst coefficients using non-linear least squares.
 
-    This function approximates the fluctuation function using multiple Hurst coefficients
-    and returns the fitted parameters along with their standard errors and residuals.
+    This function fits a model with crossover points to the fluctuation function data using
+    scipy.optimize.curve_fit for optimization. It returns the fitted parameters with their
+    standard errors and the residuals of the fit.
 
     Args:
-        hs (np.ndarray): The independent variable array of shape (k, M) where data is measured.
-        S (np.ndarray): The dependent data array of length M.
-        crossover_amount (int): The number of crossover points in the fluctuation function.
-        max_ridigity (float, optional): Maximum value of the rigidity coefficient. Defaults to +np.inf.
-        min_ridigity (float, optional): Minimum value of the rigidity coefficient. Defaults to 1.
-        min_slope_current (float, optional): Minimum value of the Hurst coefficient. Defaults to 0.
-        max_slope_current (float, optional): Maximum value of the Hurst coefficient. Defaults to 5.
-        ridigity_initial_parameter (float, optional): Initial value of the rigidity coefficient for fitting. Defaults to 1.
-        slope_current_initial_parameter (float, optional): Initial value of the Hurst coefficient for fitting. Defaults to 1.
+        hs (np.ndarray): The independent variable array, shape (k, M).
+        S (np.ndarray): The dependent data array, length M.
+        crossover_amount (int): Number of crossover points in the model.
+        max_ridigity (float, optional): Maximum bound for rigidity parameters. Defaults to +np.inf.
+        min_ridigity (float, optional): Minimum bound for rigidity parameters. Defaults to 1.
+        min_slope_current (float, optional): Minimum bound for Hurst coefficients. Defaults to 0.
+        max_slope_current (float, optional): Maximum bound for Hurst coefficients. Defaults to 5.
+        ridigity_initial_parameter (float, optional): Initial guess for rigidity parameters. Defaults to 1.
+        slope_current_initial_parameter (float, optional): Initial guess for Hurst coefficients. Defaults to 1.
 
     Returns:
-        tuple[ff_params, np.ndarray]: A tuple containing the fitted parameters as an ff_params object
-        and the residuals as a numpy array.
+        tuple[ff_params, np.ndarray]: A tuple containing the fitted parameters as an ff_params dataclass
+        instance and the residuals as a numpy array.
     """
 
     # Initialization of optimization procedure
-    # S=S
-    # hs=hs
     s = np.repeat(S[:, np.newaxis], hs.shape[0], 1).T
     change_cross_value = partial(cross_fcn_sloped, crossover_amount=crossover_amount)
-    # po = (0, np.log10(S[len(S) // 3]), np.log10(S[2 * len(S) // 3]), 1, 1, 1, 5, 5, 5)
     s_count, r_count = get_number_parameter_by_number_crossovers(crossover_amount)
 
     min_ridigity = [

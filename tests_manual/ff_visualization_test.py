@@ -1,3 +1,11 @@
+"""Manual test for fluctuation function visualization.
+
+This script generates synthetic fluctuation function data with multiple Hurst coefficients
+and crossover points, adds noise, fits the model using analyse_cross_ff, and visualizes
+the results using plot_ff. The left plot shows the data with the true parameters, and the
+right plot shows the fitted model with residuals.
+"""
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -14,10 +22,10 @@ tst_s = np.array(
 )
 
 y_0 = 0
-cross = np.array([5])
+cross = np.array([5, 50])
 cross_log = list(np.log10(cross))
-slope = [1.5, 0.25]
-r = [1, 5]
+slope = [1.5, 1, 0.5]
+r = [1, 5, 1]
 all_values = list(np.log10((cross))) + slope + r
 tst_h_multiple = 10 ** cross_fcn_sloped(
     np.log10(tst_s), y_0, *all_values, crossover_amount=len(cross)
