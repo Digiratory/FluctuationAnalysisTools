@@ -63,14 +63,14 @@ def cross_fcn_sloped(x, y_0, *args, crossover_amount: int):
     return y_0 + result - result_sloped
 
 
-def get_number_parameter_by_number_crossovers(n: int) -> tuple[int, int, int]:
+def get_number_parameter_by_number_crossovers(n: int) -> tuple[int, int]:
     """Returns the number of slopes and rigidity parameters for a given number of crossovers.
 
     Args:
         n (int): The number of crossovers in the fluctuation function.
 
     Returns:
-        tuple[int, int]: A tuple containing the number of slopes and the number of rigidity parameters.
+        tuple[int, int]: A tuple containing the amount of slopes and the amount of rigidity parameters.
     """
     slopes = n + 1
     R = n + 1
@@ -95,8 +95,8 @@ def analyse_cross_ff(
     standard errors and the residuals of the fit.
 
     Args:
-        hs (np.ndarray): The independent variable array, shape (k, M).
-        S (np.ndarray): The dependent data array, length M.
+        hs (np.ndarray): The dependent data array, length M.
+        S (np.ndarray): The independent variable array, shape (k, M)
         crossover_amount (int): Number of crossover points in the model.
         max_ridigity (float, optional): Maximum bound for rigidity parameters. Defaults to +np.inf.
         min_ridigity (float, optional): Minimum bound for rigidity parameters. Defaults to 1.

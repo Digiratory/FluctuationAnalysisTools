@@ -19,8 +19,8 @@ def plot_ff(
     including error bars if residuals are provided, and marks the crossover points.
 
     Args:
-        hs (np.ndarray): The independent variable array, shape (k, M).
-        S (np.ndarray): The dependent data array, length M.
+        hs (np.ndarray): The dependent data array, length M.
+        S (np.ndarray): The independent variable array, shape (k, M)
         ff_parameter (ff_params): Fitted parameters from the fluctuation function analysis.
         residuals (np.ndarray, optional): Residuals for plotting error bars. Defaults to None.
         ax (matplotlib.axes.Axes, optional): Matplotlib axis to plot on. If None, creates a new figure. Defaults to None.
