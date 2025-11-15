@@ -4,7 +4,7 @@ from functools import partial
 import numpy as np
 from scipy.optimize import curve_fit
 
-from StatTools.analysis.support_ff import tf
+from StatTools.analysis.support_ff import ff_base_appriximation
 
 
 @dataclass
@@ -43,7 +43,7 @@ def cross_fcn_sloped(x, y_0, *args, crossover_amount: int):
     R = args[crossovers + slopes_num : crossovers + 2 * slopes_num]
 
     curr_C = None
-    Ridigity = None
+    ridigity = None
     slope_val = None
     prev_C = -100
     result_sloped = 0
@@ -56,9 +56,9 @@ def cross_fcn_sloped(x, y_0, *args, crossover_amount: int):
             curr_C = 100
             pass
         slope_val = slope[index]
-        Ridigity = R[index]
-        result += slope_val * tf(x, Ridigity, prev_C, curr_C)
-        result_sloped += slope_val * tf(0, Ridigity, prev_C, curr_C)
+        ridigity = R[index]
+        result += slope_val * ff_base_appriximation(x, ridigity, prev_C, curr_C)
+        result_sloped += slope_val * ff_base_appriximation(0, ridigity, prev_C, curr_C)
         prev_C = curr_C
     return y_0 + result - result_sloped
 
@@ -70,7 +70,7 @@ def get_number_parameter_by_number_crossovers(n: int) -> tuple[int, int]:
         n (int): The number of crossovers in the fluctuation function.
 
     Returns:
-        tuple[int, int]: A tuple containing the amount of slopes and the amount of rigidity parameters.
+        tuple[int, int]: A tuple containing the amount of slopes and the amount of rigidity (R) parameters.
     """
     slopes = n + 1
     R = n + 1
@@ -81,7 +81,7 @@ def analyse_cross_ff(
     hs: np.ndarray,
     S: np.ndarray,
     crossover_amount,
-    max_ridigity: float = +np.inf,
+    max_ridigity: float = np.inf,
     min_ridigity: float = 1,
     min_slope_current: float = 0,
     max_slope_current: float = 5,
@@ -151,7 +151,7 @@ def analyse_cross_ff(
         for k in range(crossover_amount)
     ]
 
-    po = (
+    p0 = (
         [
             0,
         ]
@@ -165,7 +165,7 @@ def analyse_cross_ff(
         change_cross_value,
         np.log10(s.flatten()),
         np.log10(hs.flatten()),
-        p0=po,
+        p0=p0,
         bounds=(
             bounds_min,
             bounds_max,

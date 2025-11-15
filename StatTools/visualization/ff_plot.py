@@ -12,6 +12,7 @@ def plot_ff(
     ff_parameter: ff_params,
     residuals=None,
     ax=None,
+    title=None,
 ):
     """Plots the fluctuation function with fitted parameters and crossover points.
 
@@ -53,11 +54,7 @@ def plot_ff(
             label=r"$F(S) \pm 2\sigma$",
         )
     else:
-        ax.plot(
-            S,
-            fit_func,
-            label=r"$F(S)",
-        )
+        ax.plot(S, fit_func, label=r"$F(S)")
 
     S_new = np.repeat(S[:, np.newaxis], hs.shape[0], 1).T
     array_for_limits = [-np.inf] + list(crossovers) + [+np.inf]
@@ -76,7 +73,6 @@ def plot_ff(
         ax.axvline(
             c.value, color="k", linestyle="--", label=f"Cross at $S={c.value:.2f}$"
         )
-
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.grid(which="both")
