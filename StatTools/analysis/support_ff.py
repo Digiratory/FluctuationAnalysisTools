@@ -77,8 +77,6 @@ def tf_minus_inf(x: np.ndarray, R: int, C1: int) -> float:
     Returns:
         float: The return value of function with current values of x,C1 and R.
     """
-    # return rev_f_fcn(x, R, C1)
-    # return f_fcn(x, R, 0)-f_fcn(x, 1,C1)
     return -f_fcn(x, R, C1) - rev_f_fcn(x, R, np.min(x))
 
 
@@ -94,7 +92,6 @@ def tf_plus_inf(x: np.ndarray, R: int, C2: int) -> float:
     Returns:
         float: The return value of function with current values of x,C2 and R.
     #"""
-    # return f_fcn(x, R, C2)
     return -rev_f_fcn(x, R, C2)
 
 

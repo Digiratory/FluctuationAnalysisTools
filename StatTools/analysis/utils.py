@@ -64,15 +64,12 @@ def cross_fcn_sloped(x, y_0, *args, crossover_amount: int):
 
     slope_fcn = np.zeros_like(x, dtype=float)
     fcn_bias = 0
-    # result_sloped = 0
-    # result = np.zeros_like(x, dtype=float)
 
     for index in range(slopes_num):
         if index == 0:
             left_c = -np.inf
             left_r = -np.inf
-            # left_c = None
-            # left_r = None
+
         else:
             left_c = C[index - 1]
             left_r = R[index - 1]
@@ -87,37 +84,14 @@ def cross_fcn_sloped(x, y_0, *args, crossover_amount: int):
             right_r = R[index]
         slope_val = slope[index]
 
-        # cur_slope_fcn += slope_val*ff_base_appriximation(x,left_r,right_r,left_c,right_c)
-        # # result += slope_val * ff_base_appriximation(x, ridigity, prev_C, curr_C)
-        # cur_slope_fcn_sloped += slope_val * ff_base_appriximation(0, left_r,right_r,left_c,right_c)
-
         b = slope_val * ff_base_appriximation(x, left_r, right_r, left_c, right_c)
         slope_fcn += b
 
         fcn_bias += slope_val * ff_base_appriximation(
             0, left_r, right_r, left_c, right_c
         )
-        # else:
-        #     slope_func = tf_plus_inf(x, right_r, right_c)
-        #     slope_func_sloped = tf_plus_inf(0, right_r, right_c)
-        # cur_slope_fcn += slope_val * slope_func
-        # cur_slope_fcn_sloped += slope_val * slope_func_sloped
-        # prev_C = curr_C
+
     return y_0 + slope_fcn - fcn_bias
-
-
-# def get_number_parameter_by_number_crossovers(n: int) -> tuple[int, int]:
-#     """Returns the number of slopes and rigidity parameters for a given number of crossovers.
-
-#     Args:
-#         n (int): The number of crossovers in the fluctuation function.
-
-#     Returns:
-#         tuple[int, int]: A tuple containing the amount of slopes and the amount of rigidity (R) parameters.
-#     """
-#     slopes = n + 1
-#     R = n
-#     return slopes, R
 
 
 def analyse_cross_ff(
