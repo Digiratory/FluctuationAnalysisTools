@@ -110,3 +110,4 @@ print(actual_h) # Should print a value close to 0.7
 * [Alexandr Kuzmenko](https://github.com/alexandr-1k)
 * [Aleksandr Sinitca](https://github.com/Sinitca-Aleksandr)
 * [Asya Lyanova](https://github.com/pipipyau)
+* [Maya Gavrichenkova](https://github.com/MayaGavrichenkova)
