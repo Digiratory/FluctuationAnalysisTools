@@ -1,10 +1,16 @@
+import os
+
 import numpy as np
 import pytest
 from scipy import signal
 
 from StatTools.analysis.dfa import DFA
 
-TEST_H_VALUES = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
+IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
+if IN_GITHUB_ACTIONS:
+    TEST_H_VALUES = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
+else:
+    TEST_H_VALUES = [0.5, 1.0, 1.5, 2.0]
 
 
 def generate_fgn(length, h):

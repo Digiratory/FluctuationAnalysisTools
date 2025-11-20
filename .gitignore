@@ -14,3 +14,4 @@ wheelhouse/*
 .DS_Store
 research/out/*
 *.so
+*.pyd

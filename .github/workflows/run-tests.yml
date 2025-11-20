@@ -18,6 +18,9 @@ jobs:
 
     runs-on: ${{ matrix.os }}
 
+    env:
+      CI: true
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3

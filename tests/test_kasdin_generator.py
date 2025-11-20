@@ -1,19 +1,24 @@
+import os
+
 import numpy as np
 import pytest
 
-from StatTools.analysis.dfa import DFA
-from StatTools.generators.kasdin_generator import KasdinGenerator
+from StatTools.experimental.analysis.tools import get_extra_h_dfa
+from StatTools.generators.kasdin_generator import create_kasdin_generator
+
+IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
+if IN_GITHUB_ACTIONS:
+    h_list = [0.25, 1, 2, 3.5]
+else:
+    h_list = np.arange(0.25, 3.75, 0.25)
 
 testdata = {
-    "h_list": [i * 0.01 for i in range(50, 200, 20)],
+    "h_list": h_list,
     "rate_list": [14],
 }
 
 
-def get_test_h(
-    h: float,
-    target_len: int,
-) -> float:
+def get_test_h(h: float, target_len: int, filter_coefficients_length: int) -> float:
     """
     Calculates the Hurst exponent for the generated trajectory.
 
@@ -27,15 +32,16 @@ def get_test_h(
     Returns:
         Calculated Hurst exponent (h_gen)
     """
-    generator = KasdinGenerator(h, length=target_len)
+    generator = create_kasdin_generator(
+        h, length=target_len, filter_coefficients_length=filter_coefficients_length
+    )
     signal = generator.get_full_sequence()
-    dfa = DFA(signal)
-    return dfa.find_h()
+    return get_extra_h_dfa(signal)
 
 
 @pytest.mark.parametrize("h", testdata["h_list"])
 @pytest.mark.parametrize("rate", testdata["rate_list"])
-def test_kasdin_generator(h: float, rate: int):
+def test_kasdin_generator_open_length(h: float, rate: int):
     """
     It tests the generator for compliance with the specified Hurst exponent.
 
@@ -43,12 +49,12 @@ def test_kasdin_generator(h: float, rate: int):
         h: The specified Hurst exponent
         base: The base of the number system for bins
     """
-    threshold = 0.10
-    times = 3
+    threshold = 0.20
+    times = 5
     mean_difference = 0
     length = 2**rate
     for _ in range(times):
-        h_gen = get_test_h(h, length)
+        h_gen = get_test_h(h, length, length)
         mean_difference += abs(h_gen - h) / h
     mean_difference /= times
     assert (

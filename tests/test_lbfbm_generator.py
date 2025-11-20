@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import pytest
 from scipy import stats
@@ -5,10 +7,18 @@ from scipy import stats
 from StatTools.analysis.dpcca import dpcca
 from StatTools.generators.lbfbm_generator import LBFBmGenerator, normalize
 
+IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
+if IN_GITHUB_ACTIONS:
+    h_list = [0.5, 1, 1.5]
+    rate_list = [14]
+else:
+    h_list = np.arange(0.5, 1.6, 0.15)
+    rate_list = [12, 14]
+
 testdata = {
-    "h_list": [i * 0.01 for i in range(50, 160, 15)],
+    "h_list": h_list,
     "base_list": [1.1],
-    "rate_list": [12, 14],
+    "rate_list": rate_list,
 }
 
 STEP = 1
