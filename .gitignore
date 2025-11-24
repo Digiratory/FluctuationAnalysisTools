@@ -15,3 +15,5 @@ wheelhouse/*
 research/out/*
 *.so
 *.pyd
+.clinerules/*
+memory-bank/*
