@@ -87,26 +87,15 @@ def dpcca_worker(
 
     for s_i, s_val in enumerate(s_current):
 
-        V = np.arange(
-            0, shape[1] - s_val + 1, int(step * s_val)
-        )  # текущий временной масштаб
-        Xw = np.arange(s_val, dtype=int)  # колличесвтр временных точек
+        V = np.arange(0, shape[1] - s_val + 1, int(step * s_val))
+        Xw = np.arange(s_val, dtype=int)
         Y = np.zeros((shape[0], len(V)), dtype=object)
-        # shape_for_slide_window=(1,s_val)
         signal_view = np.lib.stride_tricks.sliding_window_view(
             cumsum_arr, s_val, axis=1
         )
         signal_view = signal_view[:, :: int(step * s_val)]
         for n in range(cumsum_arr.shape[0]):
-            # shape_for_slide_window=(s_val,1)
-            # signal_view=np.lib.stride_tricks.sliding_window_view(cumsum_arr, s_val)
             for m_i, W in enumerate(signal_view[n]):
-                # shape_for_slide_window=(s_val,1)
-                # signal_view=np.lib.stride_tricks.sliding_window_view(cumsum_arr, shape_for_slide_window)
-                # W = cumsum_arr[n][v : v + s_val]
-                # v=len(m)
-                # v=signal_view[m]
-                # =cumsum_arr[n][m_i]
                 if len(W) == 0:
                     print(f"\tFor s = {s_val} W is an empty slice!")
                     return P, R, F
