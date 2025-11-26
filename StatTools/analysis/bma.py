@@ -10,6 +10,9 @@ def _bma_worker(
 ) -> np.ndarray:
     """
     Core Backward Moving Average (BMA) computation for a single scale n.
+    Original articles:
+    - https://link.springer.com/article/10.1140/epjb/e20020150
+    - http://argento.bu.edu/hes/articles/ccs04.pdf
 
     For each time series y(t), this function:
       1. Computes the backward moving average ỹ(t) over past n points
