@@ -127,30 +127,38 @@ def test_dma_accuracy(test_dataset, h, N, rtype):
 @pytest.mark.parametrize("h", H_VALUES)
 def test_bma_vs_nolds_dfa(h):
     """
-    Сравнение с nolds.dfa():
+    Compare BMA DFA implementation with nolds.dfa() on fractional Gaussian noise (fGn).
 
-    - генерируем fGn с заданным H
-    - считаем H_bma нашим методом
-    - считаем H_nolds через nolds.dfa
-    - проверяем, что они достаточно близки
+    Steps:
+    - Generate fGn signal with known Hurst exponent `h`
+    - Compute Hurst exponent using our BMA-based DFA method (`H_bma`)
+    - Compute Hurst exponent using `nolds.dfa()` (`H_nolds`)
+    - Assert that both estimates are close within a reasonable tolerance
+
+    This test ensures consistency between our implementation and the well-established `nolds` library.
     """
-    N = 2**14
+    N = 2**14  # Use sufficiently long signal for stable DFA estimation
 
+    # Generate fractional Gaussian noise with target Hurst exponent
     sig = generate_fractional_noise(h, N)
 
-    # Наш BMA
-    scales = np.arange(10, N // 4, 10)
-    F_bma, s_bma = bma(sig, s=scales, n_integral=1, step=0.5)
-    H_bma = estimate_hurst(F_bma, s_bma)
+    # Compute DFA using our BMA method
+    scales = np.arange(
+        10, N // 4, 10
+    )  # Define scale range, avoiding too small/large boxes
+    F_bma, s_bma = bma(sig, s=scales, n_integral=1, step=0.5)  # Perform BMA DFA
+    H_bma = estimate_hurst(F_bma, s_bma)  # Estimate Hurst from scaling exponent
 
-    # nolds.dfa
-    # dfa возвращает показатель альфа, который для fGn интерпретируется как H
+    # Compute DFA using nolds library (returns alpha ≈ H for fGn)
     H_nolds = nolds.dfa(sig)
 
+    # Output results for debugging/logging purposes
     print(
         f"\nH_true={h:.2f}  H_bma={H_bma:.3f}  "
         f"H_nolds={H_nolds:.3f}  diff={abs(H_bma - H_nolds):.3f}"
     )
 
-    # допускаем некоторое различие, но методы не должны сильно расходиться
-    assert abs(H_bma - H_nolds) < 0.2
+    # Assert that both methods yield similar results (tolerance accounts for methodological differences)
+    assert (
+        abs(H_bma - H_nolds) < 0.2
+    ), f"BMA and nolds.dfa() differ too much for H={h}: |{H_bma:.3f} - {H_nolds:.3f}| >= 0.2"

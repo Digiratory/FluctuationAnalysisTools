@@ -1,4 +1,5 @@
-from typing import Iterable, Tuple, Union
+from collections.abc import Iterable
+from typing import Tuple, Union
 
 import numpy as np
 
@@ -11,8 +12,8 @@ def _bma_worker(
     """
     Core Backward Moving Average (BMA) computation for a single scale n.
     Original articles:
-    - https://link.springer.com/article/10.1140/epjb/e20020150
-    - http://argento.bu.edu/hes/articles/ccs04.pdf
+    - Alessio, E., Carbone, A., Castelli, G. et al. Second-order moving average and scaling of stochastic time series. Eur. Phys. J. B 27, 197–200 (2002). https://doi.org/10.1140/epjb/e20020150
+    - Carbone, A., Castelli, G., & Stanley, H. E. (2004). Analysis of clusters formed by the moving average of a long-range correlated time series. Physical Review E, 69(2), 026105. https://doi.org/10.1103/PhysRevE.69.026105
 
     For each time series y(t), this function:
       1. Computes the backward moving average ỹ(t) over past n points
@@ -209,6 +210,7 @@ def bma(
         s = [int(s)]
     else:
         raise ValueError("Unsupported type for 's'. Provide int or iterable of ints.")
+
     # Optional integration (n_integral times)
     for _ in range(max(int(n_integral), 0)):
         y = np.cumsum(y, axis=1)
