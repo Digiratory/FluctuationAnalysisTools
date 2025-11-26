@@ -1,3 +1,6 @@
+import os
+
+import nolds
 import numpy as np
 import pytest
 from scipy import signal, stats
@@ -7,22 +10,22 @@ from StatTools.analysis.bma import bma
 # ------------------------------------------------------------
 # PARAMETERS FROM TABLE
 # ------------------------------------------------------------
-H_VALUES = [0.2, 0.4, 0.5, 0.6, 0.8]
-LENGTHS = [2**10, 2**12, 2**14, 2**16]
+IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
+
+H_VALUES_CI = [0.2, 0.8]
+LENGTHS_CI = [2**10, 2**16]
+
+H_VALUES = H_VALUES_CI if IN_GITHUB_ACTIONS else [0.2, 0.4, 0.5, 0.6, 0.8]
+LENGTHS = LENGTHS_CI if IN_GITHUB_ACTIONS else [2**10, 2**12, 2**14, 2**16]
 
 
 # ------------------------------------------------------------
-# fGn/fBm GENERATOR (Kasdin-style, as in test_fa)
+# fGn/fBm GENERATOR (Kasdin-style)
 # ------------------------------------------------------------
-nolds = pytest.importorskip("nolds")  # аккуратно с отсутствием зависимости
-
-
-def estimate_hurst(F, s):
-    return stats.linregress(np.log(s), np.log(F)).slope
 
 
 def generate_fractional_noise(h: float, length: int):
-    """Generate fGn using Kasdin filter method (same as in test_fa)."""
+    """Generate fGn using Kasdin filter method."""
     z = np.random.normal(size=length * 2)
     beta = 2 * h - 1
     L = length * 2
@@ -121,7 +124,7 @@ def test_dma_accuracy(test_dataset, h, N, rtype):
     assert rmse == pytest.approx(0, abs=tol)
 
 
-@pytest.mark.parametrize("h", [0.3, 0.5, 0.7])
+@pytest.mark.parametrize("h", H_VALUES)
 def test_bma_vs_nolds_dfa(h):
     """
     Сравнение с nolds.dfa():

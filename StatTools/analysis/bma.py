@@ -173,12 +173,6 @@ def bma(
             - If input array dimension > 2
             - If all scale values are larger than length / 4
             - If a given scale produces no evaluation positions with the chosen step
-
-    Note:
-        This implementation uses:
-          - Backward moving average (no future values),
-          - Optional integration to handle both fGn and fBm,
-          - Overlapping windows controlled by 'step'.
     """
     # Ensure correct dimensionality
     if len(arr.shape) > 2:
