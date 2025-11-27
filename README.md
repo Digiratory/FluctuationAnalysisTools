@@ -155,7 +155,7 @@ print(f"Estimated H: {actual_h:.3f} (Expected: {h:.3f})")
 - `DPCCA`: Detrended Partial Cross-Correlation Analysis
 - `FA`: Fluctuation Analysis
 - `QSS`: Quantile Segmentation Statistics
-- `BMA`: Backward moving average
+- `BMA`: Backward Moving Average
 
 ### Filters
 - `KalmanFilter`: Kalman filtering implementation
