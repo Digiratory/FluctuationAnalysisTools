@@ -12,7 +12,7 @@ from StatTools.analysis.bma import bma
 # ------------------------------------------------------------
 IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
 
-H_VALUES_CI = [0.1, 0.5, 1]
+H_VALUES_CI = [0.1, 0.5, 0.8]
 LENGTHS_CI = [2**10, 2**13]
 
 H_VALUES = H_VALUES_CI if IN_GITHUB_ACTIONS else [0.1, 0.2, 0.4, 0.5, 0.6, 0.8]
