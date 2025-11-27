@@ -92,7 +92,7 @@ def estimate_hurst(F, s):
 @pytest.mark.parametrize("h", H_VALUES)
 @pytest.mark.parametrize("N", LENGTHS)
 @pytest.mark.parametrize("rtype", ["fGn", "fBm"])
-def test_dma_accuracy(test_dataset, h, N, rtype):
+def test_bma_accuracy(test_dataset, h, N, rtype):
     """
     Compare estimated H vs true H.
     For fGn: n_integral = 1
