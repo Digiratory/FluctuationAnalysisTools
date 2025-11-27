@@ -46,11 +46,6 @@ def generate_fractional_noise(h: float, length: int):
     return Z[:length]
 
 
-def generate_fbm(h: float, length: int):
-    """Integrate fGn to produce fBm."""
-    return np.cumsum(generate_fractional_noise(h, length))
-
-
 # ------------------------------------------------------------
 # FIXTURE: multiple fGn/fBm signals for statistical tests
 # ------------------------------------------------------------
@@ -120,7 +115,6 @@ def test_dma_accuracy(test_dataset, h, N, rtype):
     print(f"\nType={rtype} H={h} N={N} eps={eps:.3f} rmse={rmse:.3f}")
 
     # Assertions:
-    #  - BMA is less accurate than CDMA, so tolerances are wider than for FA
     #  - For large N error must be small
     tol = 0.22 if N < 4000 else 0.15
 

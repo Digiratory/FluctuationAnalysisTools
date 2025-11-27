@@ -1,3 +1,4 @@
+from .bma import bma
 from .dpcca import dpcca
 from .fa import fa
 from .support_ff import (
