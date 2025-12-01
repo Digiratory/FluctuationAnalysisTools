@@ -1,11 +1,12 @@
 import os
 
-import nolds
 import numpy as np
 import pytest
-from scipy import signal, stats
+from scipy import stats
 
 from StatTools.analysis.bma import bma
+from StatTools.analysis.dfa import DFA
+from StatTools.generators.kasdin_generator import create_kasdin_generator
 
 # ------------------------------------------------------------
 # PARAMETERS FROM TABLE
@@ -26,20 +27,7 @@ LENGTHS = LENGTHS_CI if IN_GITHUB_ACTIONS else [2**10, 2**13]
 
 def generate_fractional_noise(h: float, length: int):
     """Generate fGn using Kasdin filter method."""
-    z = np.random.normal(size=length * 2)
-    beta = 2 * h - 1
-    L = length * 2
-    A = np.zeros(L)
-    A[0] = 1
-    for k in range(1, L):
-        A[k] = (k - 1 - beta / 2) * A[k - 1] / k
-
-    if h == 0.5:  # white noise case
-        Z = z
-    else:
-        Z = signal.lfilter(1, A, z)
-
-    return Z[:length]
+    return create_kasdin_generator(h, length=length).get_full_sequence()
 
 
 # ------------------------------------------------------------
@@ -144,7 +132,7 @@ def test_bma_vs_nolds_dfa(h):
     H_bma = estimate_hurst(F_bma, s_bma)  # Estimate Hurst from scaling exponent
 
     # Compute DFA using nolds library (returns alpha ≈ H for fGn)
-    H_nolds = nolds.dfa(sig)
+    H_nolds = DFA(sig).find_h()
 
     # Output results for debugging/logging purposes
     print(
