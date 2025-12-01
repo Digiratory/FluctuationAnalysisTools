@@ -98,6 +98,10 @@ def bma(
     """
     Execute Backward Detrended Moving Average (BMA/DMA) analysis for time series.
 
+    Original articles:
+    - Alessio, E., Carbone, A., Castelli, G. et al. Second-order moving average and scaling of stochastic time series. Eur. Phys. J. B 27, 197–200 (2002). https://doi.org/10.1140/epjb/e20020150
+    - Carbone, A., Castelli, G., & Stanley, H. E. (2004). Analysis of clusters formed by the moving average of a long-range correlated time series. Physical Review E, 69(2), 026105. https://doi.org/10.1103/PhysRevE.69.026105
+
     This method implements the algorithm:
 
         1. (Optional) Integration
