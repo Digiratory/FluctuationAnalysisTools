@@ -123,19 +123,13 @@ def test_bma_vs_dfa(h):
     F_bma, s_bma = bma(sig, s=scales, n_integral=1, step=0.5)  # Perform BMA DFA
     H_bma = estimate_hurst(F_bma, s_bma)  # Estimate Hurst from scaling exponent
 
-    # Compute DFA using nolds library (returns alpha ≈ H for fGn)
+    # Compute DPCCA using dpcca method
     P, R, F, S = dpcca(sig, 2, 0.5, scales, len(scales), n_integral=1)
     F = np.sqrt(F)
     H_dpcca = estimate_hurst(F, S)
 
     diff = abs(H_bma - H_dpcca)
     diff_pct = diff / H_dpcca * 100
-
-    # Output results for debugging/logging purposes
-    print(
-        f"\nH_true={h:.2f}  H_bma={H_bma:.3f}  "
-        f"H_dpcca={H_dpcca:.3f}  diff={diff:.3f} ({diff_pct:.1f}%)"
-    )
 
     # Assert that both methods yield similar results (tolerance accounts for methodological differences)
     assert diff_pct < 25, (
