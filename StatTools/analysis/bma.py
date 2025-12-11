@@ -1,3 +1,4 @@
+import warnings
 from collections.abc import Iterable
 from typing import Tuple, Union
 
@@ -68,13 +69,28 @@ def _bma_worker(
     # NOTE: here t >= n-1, so t-n >= -1; for t-n == -1, sum = cs[t].
     window_sums = np.empty((n_signals, t_indices.size), dtype=float)
 
-    for idx, t in enumerate(t_indices):
-        start = t - n + 1
-        end = t
-        if start <= 0:
-            window_sums[:, idx] = cs[:, end]
-        else:
-            window_sums[:, idx] = cs[:, end] - cs[:, start - 1]
+    t_indices = np.asarray(t_indices)
+
+    # start и end для всех индексов
+    start = t_indices - n + 1
+    end = t_indices
+
+    # Массив для результата
+    window_sums = np.empty((cs.shape[0], len(t_indices)), dtype=cs.dtype)
+
+    # Маски
+    mask_start_le_zero = start <= 0
+    mask_start_gt_zero = ~mask_start_le_zero
+
+    # Обработка start <= 0
+    if mask_start_le_zero.any():
+        window_sums[:, mask_start_le_zero] = cs[:, end[mask_start_le_zero]]
+
+    # Обработка start > 0
+    if mask_start_gt_zero.any():
+        window_sums[:, mask_start_gt_zero] = (
+            cs[:, end[mask_start_gt_zero]] - cs[:, start[mask_start_gt_zero] - 1]
+        )
 
     y_mean = window_sums / float(n)  # backward moving average, shape (n_signals, M)
 
@@ -207,7 +223,7 @@ def bma(
                 "All input scale values are larger than series length / 4!"
             )
         if len(s) != init_s_len:
-            print(f"\tBMA warning: only following scales are in use: {s}")
+            warnings.warn(f"\tBMA warning: only following scales are in use: {s}")
     elif isinstance(s, (float, int)):
         if s > L / 4:
             raise ValueError("Cannot use scale > length / 4")

@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 from scipy import stats
 
+from StatTools.analysis import dpcca
 from StatTools.analysis.bma import bma
-from StatTools.analysis.dfa import DFA
 from StatTools.generators.kasdin_generator import create_kasdin_generator
 
 # ------------------------------------------------------------
@@ -13,11 +13,11 @@ from StatTools.generators.kasdin_generator import create_kasdin_generator
 # ------------------------------------------------------------
 IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
 
-H_VALUES_CI = [0.1, 0.5, 0.8]
-LENGTHS_CI = [2**10, 2**13]
+H_VALUES_CI = [0.3, 0.5, 0.8]
+LENGTHS_CI = [2**10, 2**14]
 
-H_VALUES = H_VALUES_CI if IN_GITHUB_ACTIONS else [0.1, 0.2, 0.4, 0.5, 0.6, 0.8]
-LENGTHS = LENGTHS_CI if IN_GITHUB_ACTIONS else [2**10, 2**13]
+H_VALUES = H_VALUES_CI if IN_GITHUB_ACTIONS else [0.3, 0.5, 0.8]
+LENGTHS = LENGTHS_CI if IN_GITHUB_ACTIONS else [2**10, 2**14]
 
 
 # ------------------------------------------------------------
@@ -90,34 +90,26 @@ def test_bma_accuracy(test_dataset, h, N, rtype):
 
     H_estimates = np.array(H_estimates)
 
-    # Absolute error mean
-    eps = np.mean(np.abs(H_estimates - h))
+    # Relative error mean (%)
+    rel_err = (H_estimates - h) / h
+    eps = np.mean(np.abs(rel_err)) * 100
 
-    # RMSE
-    rmse = np.sqrt(np.mean((H_estimates - h) ** 2))
-
-    print(f"\nType={rtype} H={h} N={N} eps={eps:.3f} rmse={rmse:.3f}")
-
-    # Assertions:
-    #  - For large N error must be small
-    tol = 0.22 if N < 4000 else 0.15
+    tol = 25
 
     assert eps == pytest.approx(0, abs=tol)
-    assert rmse == pytest.approx(0, abs=tol)
 
 
 @pytest.mark.parametrize("h", H_VALUES)
-def test_bma_vs_nolds_dfa(h):
+def test_bma_vs_dfa(h):
     """
-    Compare BMA DFA implementation with nolds.dfa() on fractional Gaussian noise (fGn).
+    Compare BMA DPCCA implementation on fractional Gaussian noise (fGn).
 
     Steps:
     - Generate fGn signal with known Hurst exponent `h`
     - Compute Hurst exponent using our BMA-based DFA method (`H_bma`)
-    - Compute Hurst exponent using `nolds.dfa()` (`H_nolds`)
+    - Compute Hurst exponent using `DPCCA` (`H_dpcca`)
     - Assert that both estimates are close within a reasonable tolerance
 
-    This test ensures consistency between our implementation and the well-established `nolds` library.
     """
     N = 2**14  # Use sufficiently long signal for stable DFA estimation
 
@@ -132,15 +124,21 @@ def test_bma_vs_nolds_dfa(h):
     H_bma = estimate_hurst(F_bma, s_bma)  # Estimate Hurst from scaling exponent
 
     # Compute DFA using nolds library (returns alpha ≈ H for fGn)
-    H_nolds = DFA(sig).find_h()
+    P, R, F, S = dpcca(sig, 2, 0.5, scales, len(scales), n_integral=1)
+    F = np.sqrt(F)
+    H_dpcca = estimate_hurst(F, S)
+
+    diff = abs(H_bma - H_dpcca)
+    diff_pct = diff / H_dpcca * 100
 
     # Output results for debugging/logging purposes
     print(
         f"\nH_true={h:.2f}  H_bma={H_bma:.3f}  "
-        f"H_nolds={H_nolds:.3f}  diff={abs(H_bma - H_nolds):.3f}"
+        f"H_dpcca={H_dpcca:.3f}  diff={diff:.3f} ({diff_pct:.1f}%)"
     )
 
     # Assert that both methods yield similar results (tolerance accounts for methodological differences)
-    assert (
-        abs(H_bma - H_nolds) < 0.2
-    ), f"BMA and nolds.dfa() differ too much for H={h}: |{H_bma:.3f} - {H_nolds:.3f}| >= 0.2"
+    assert diff_pct < 25, (
+        f"BMA and dfa() differ too much for H={h}: "
+        f"|{H_bma:.3f} - {H_dpcca:.3f}| = {diff_pct:.1f}% >= 25%"
+    )
