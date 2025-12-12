@@ -1,0 +1,70 @@
+"""Tests for the ndfnoise_generator module."""
+
+import os
+
+import numpy as np
+import pytest
+
+from StatTools.analysis.dfa import DFA
+from StatTools.generators.ndfnoise_generator import ndfnoise, ndfnoise_optimized
+
+IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
+if IN_GITHUB_ACTIONS:
+    h_list = [0.5, 1, 1.5]
+    rate_list = [10]
+else:
+    h_list = [0.5, 0.8, 1, 1.2, 1.5]
+    rate_list = [10]
+
+testdata = {
+    "h_list": h_list,
+    "rate_list": rate_list,
+}
+
+
+def get_h_dfa_sliced(arr: np.ndarray) -> np.ndarray:
+    """
+    Calculate DFA for z slaces.
+    """
+    if len(arr.shape) != 3:
+        h_values = DFA(arr).find_h()
+        return h_values
+    ny = arr.shape[1]
+    nz = arr.shape[2]
+    results = np.zeros((nz, ny))
+
+    for i in range(nz):
+        slice_2d = arr[:, :, i]
+        h_values = DFA(slice_2d).find_h()
+        results[i] = h_values
+    return results
+
+
+@pytest.mark.parametrize("hurst_theory", testdata["h_list"])
+@pytest.mark.parametrize("rate", testdata["rate_list"])
+def test_ndfnoise_generator_2d(hurst_theory: float, rate: int):
+    """Generator test"""
+    size = 2**rate
+    dim = 2
+    shape = (size,) * dim
+    f = ndfnoise_optimized(shape, hurst_theory, normalize=True)
+    hurst_est_array = get_h_dfa_sliced(np.diff(f))
+    hurst_mean = np.mean(hurst_est_array)
+    assert np.isclose(
+        hurst_mean, hurst_theory, atol=0.1
+    ).all(), f"Hurst mismatch: estimated={hurst_mean}, expected={hurst_theory}"
+
+
+@pytest.mark.parametrize("hurst_theory", testdata["h_list"])
+@pytest.mark.parametrize("rate", testdata["rate_list"])
+def test_ndfnoise_generator_3d(hurst_theory: float, rate: int):
+    """Generator test"""
+    size = 2**rate
+    dim = 3
+    shape = (size,) * dim
+    f = ndfnoise(shape, hurst_theory, normalize=True)
+    hurst_est_array = get_h_dfa_sliced(np.diff(f))
+    hurst_mean = np.mean(hurst_est_array)
+    assert np.isclose(
+        hurst_mean, hurst_theory, atol=0.1
+    ).all(), f"Hurst mismatch: estimated={hurst_mean}, expected={hurst_theory}"
