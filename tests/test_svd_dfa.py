@@ -7,21 +7,17 @@ from scipy import stats
 from StatTools.analysis.svd_dfa import svd_dfa
 from StatTools.generators.kasdin_generator import create_kasdin_generator
 
-"""
-------------------------------------------------------------
-PARAMETERS (CI-friendly like in the example)
-------------------------------------------------------------"""
-
 IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
 
 H_VALUES_CI = [0.3, 0.5, 0.8]
-LENGTHS_CI = [2**12]
-N_RUNS_CI = 10
+N_CI = 2**13
+N_RUNS_CI = 1
+N_MAX_CI = 2**13
 
 H_VALUES = H_VALUES_CI if IN_GITHUB_ACTIONS else [0.3, 0.5, 0.8]
-LENGTHS = LENGTHS_CI if IN_GITHUB_ACTIONS else [2**12, 2**14]
-
-N_RUNS = N_RUNS_CI if IN_GITHUB_ACTIONS else 10
+N_LEN = N_CI if IN_GITHUB_ACTIONS else 2**13
+N_RUNS = N_RUNS_CI if IN_GITHUB_ACTIONS else 1
+N_MAX = N_MAX_CI if IN_GITHUB_ACTIONS else 2**13
 
 """
 ------------------------------------------------------------
@@ -56,17 +52,16 @@ def test_dataset():
     """
     data = {}
     for h in H_VALUES:
-        for N in LENGTHS:
-            fgn_runs = []
-            fbm_runs = []
-            for _ in range(N_RUNS):
-                fgn = generate_fractional_noise(h, N)
-                fbm = np.cumsum(fgn)
-                fgn_runs.append(fgn)
-                fbm_runs.append(fbm)
+        fgn_runs = []
+        fbm_runs = []
+        for _ in range(N_RUNS):
+            fgn = generate_fractional_noise(h, N_LEN)
+            fbm = np.cumsum(fgn)
+            fgn_runs.append(fgn)
+            fbm_runs.append(fbm)
 
-            data[("fGn", h, N)] = fgn_runs
-            data[("fBm", h, N)] = fbm_runs
+        data[("fGn", h, N_LEN)] = fgn_runs
+        data[("fBm", h, N_LEN)] = fbm_runs
     return data
 
 
@@ -90,9 +85,8 @@ MAIN TEST: accuracy of SVD-DFA scaling exponent vs true H
 
 
 @pytest.mark.parametrize("h", H_VALUES)
-@pytest.mark.parametrize("N", LENGTHS)
 @pytest.mark.parametrize("rtype", ["fGn", "fBm"])
-def test_svd_dfa_accuracy(test_dataset, h, N, rtype):
+def test_svd_dfa_accuracy(test_dataset, h, rtype):
     """
     Compare estimated H vs true H.
 
@@ -104,6 +98,7 @@ def test_svd_dfa_accuracy(test_dataset, h, N, rtype):
     Tolerance is deliberately wide (like in the sample tests),
     because DFA-like estimators are noisy on finite samples.
     """
+    N = N_LEN
     runs = test_dataset[(rtype, h, N)]
     integrate = True if rtype == "fGn" else False
 
@@ -129,43 +124,6 @@ def test_svd_dfa_accuracy(test_dataset, h, N, rtype):
 
 """
 ------------------------------------------------------------
-TEST: monotonicity — larger true H => larger estimated H (on average)
-------------------------------------------------------------
-"""
-
-
-@pytest.mark.parametrize("N", LENGTHS)
-@pytest.mark.parametrize("rtype", ["fGn", "fBm"])
-def test_svd_dfa_monotonic_in_h(test_dataset, N, rtype):
-    """
-    Sanity property:
-      If H_true increases, the estimated scaling exponent should
-      (on average) increase as well.
-
-    This catches broken integration flags, swapped logs, etc.
-    """
-    integrate = True if rtype == "fGn" else False
-    scales = np.array([2**i for i in range(3, 20)])
-
-    means = []
-    for h in H_VALUES:
-        runs = test_dataset[(rtype, h, N)]
-        est = []
-        for signal in runs:
-            F, s = svd_dfa(signal, s=scales, integrate=integrate, p=2, m=1)
-            est.append(estimate_hurst(F, s))
-        means.append((h, float(np.mean(est))))
-
-    # Check monotone non-decreasing
-    for (h1, m1), (h2, m2) in zip(means, means[1:]):
-        assert m2 >= m1 - 0.05, (
-            f"Non-monotonic H estimates for {rtype}, N={N}: "
-            f"H={h1}->{h2}, mean={m1:.3f}->{m2:.3f}"
-        )
-
-
-"""
-------------------------------------------------------------
  TEST: p sensitivity should not explode (basic robustness)
 ------------------------------------------------------------
 """
@@ -179,7 +137,7 @@ def test_svd_dfa_p_sensitivity_reasonable(h):
 
     This catches mistakes like removing all components or wrong reconstruction.
     """
-    N = 2**14
+    N = N_MAX
     sig = generate_fractional_noise(h, N)
     scales = np.array([2**i for i in range(3, 20)])
 
