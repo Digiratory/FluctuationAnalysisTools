@@ -15,6 +15,8 @@ def ndfnoise(
     N-dimensional fractional Brownian motion (fBm) generator.
     Uses rFFT (real FFT) and float32 to reduce memory usage.
 
+    Method from Dieker, T. (2004) Simulation of Fractional Brownian Motion. MSc Theses, University of Twente, Amsterdam.
+
     Args:
         shape (tuple[int]): Shape of the field, example: (256, 256) or (64, 64, 64)
         hurst (tuple[float] | float): Hurst exponent H.
