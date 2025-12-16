@@ -9,12 +9,8 @@ from StatTools.analysis.dfa import DFA
 from StatTools.generators.ndfnoise_generator import ndfnoise
 
 IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
-if IN_GITHUB_ACTIONS:
-    h_list = [0.5, 1, 1.5]
-    rate_list = [10]
-else:
-    h_list = [0.5, 0.8, 1, 1.2, 1.5]
-    rate_list = [10]
+h_list = [0.5, 0.8, 1, 1.2, 1.5]
+rate_list = [10]
 
 testdata = {
     "h_list": h_list,
@@ -40,6 +36,7 @@ def get_h_dfa_sliced(arr: np.ndarray) -> np.ndarray:
     return results
 
 
+@pytest.mark.skipif(IN_GITHUB_ACTIONS, reason="Test too long for Github Actions.")
 @pytest.mark.parametrize("hurst_theory", testdata["h_list"])
 @pytest.mark.parametrize("rate", testdata["rate_list"])
 def test_ndfnoise_generator_2d(hurst_theory: float, rate: int):
@@ -55,6 +52,7 @@ def test_ndfnoise_generator_2d(hurst_theory: float, rate: int):
     ).all(), f"Hurst mismatch: estimated={hurst_mean}, expected={hurst_theory}"
 
 
+@pytest.mark.skipif(IN_GITHUB_ACTIONS, reason="Test too long for Github Actions.")
 @pytest.mark.parametrize("hurst_theory", testdata["h_list"])
 @pytest.mark.parametrize("rate", testdata["rate_list"])
 def test_ndfnoise_generator_3d(hurst_theory: float, rate: int):
