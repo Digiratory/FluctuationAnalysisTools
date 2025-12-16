@@ -15,8 +15,7 @@ def ndfnoise(
     N-dimensional fractional Brownian motion (fBm) generator.
     Uses rFFT (real FFT) and float32 to reduce memory usage.
 
-    Method from Dieker, T. (2004) Simulation of Fractional Brownian Motion. MSc Theses, University of Twente, Amsterdam.
-
+    Method from Timmer, J., & Koenig, M. (1995). On generating power law noise.
     Args:
         shape (tuple[int]): Shape of the field, example: (256, 256) or (64, 64, 64)
         hurst (tuple[float] | float): Hurst exponent H.
@@ -40,13 +39,13 @@ def ndfnoise(
     shape = tuple(shape)
     dim = len(shape)
 
-    # Итоговая форма спектра rFFT
+    # The final shape of the rFFT spectrum
     spec_shape = (*shape[:-1], shape[-1] // 2 + 1)
 
-    # Создаёт массив для хранения каждой точки спектра
+    # Creates an array to store each point of the spectrum
     k_sq = np.zeros(spec_shape, dtype=dtype)
 
-    # Цикл по обычным FFT-осям
+    # Usual FFT axes
     for i, n in enumerate(shape[:-1]):
         f = np.fft.fftfreq(n, d=1.0).astype(dtype)
         reshape = [1] * dim
@@ -54,25 +53,25 @@ def ndfnoise(
         reshape[-1] = 1
         k_sq += f.reshape(reshape) ** 2
 
-    # Последняя rFFT ось
+    # The last rFFT axis
     f_last = np.fft.rfftfreq(shape[-1], d=1.0).astype(dtype)
     k_sq += f_last.reshape((1,) * (dim - 1) + (-1,)) ** 2
 
-    # Радиальная частота — аргумент спектра
+    # Radial frequency, argument of the spectrum
     k = np.sqrt(k_sq, dtype=dtype)
 
-    # Инициализация спектра
+    # Spectrum initialization
     alpha = hurst + dim / 2.0
     S = np.zeros_like(k)
     nonzero = k > 0
     S[nonzero] = k[nonzero] ** (-alpha)
 
-    # Комплексный белый шум
+    # Complex white noise
     noise = (
         np.random.standard_normal(S.shape) + 1j * np.random.standard_normal(S.shape)
     ).astype(np.complex64)
 
-    # Обратное преобразование Фурье
+    # The inverse Fourier transform
     field = np.fft.irfftn(noise * S, s=shape).astype(dtype)
 
     if normalize:

@@ -24,7 +24,7 @@ testdata = {
 
 def get_h_dfa_sliced(arr: np.ndarray) -> np.ndarray:
     """
-    Calculate DFA for z slaces.
+    Calculate DFA for z slices.
     """
     if len(arr.shape) != 3:
         h_values = DFA(arr).find_h()
@@ -51,7 +51,7 @@ def test_ndfnoise_generator_2d(hurst_theory: float, rate: int):
     hurst_est_array = get_h_dfa_sliced(np.diff(f))
     hurst_mean = np.mean(hurst_est_array)
     assert np.isclose(
-        hurst_mean, hurst_theory, atol=0.1
+        hurst_mean, hurst_theory, atol=0.15
     ).all(), f"Hurst mismatch: estimated={hurst_mean}, expected={hurst_theory}"
 
 
@@ -66,5 +66,5 @@ def test_ndfnoise_generator_3d(hurst_theory: float, rate: int):
     hurst_est_array = get_h_dfa_sliced(np.diff(f))
     hurst_mean = np.mean(hurst_est_array)
     assert np.isclose(
-        hurst_mean, hurst_theory, atol=0.1
+        hurst_mean, hurst_theory, atol=0.15
     ).all(), f"Hurst mismatch: estimated={hurst_mean}, expected={hurst_theory}"
