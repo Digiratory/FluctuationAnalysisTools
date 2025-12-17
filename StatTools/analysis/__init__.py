@@ -1,5 +1,6 @@
 from .dpcca import dpcca
 from .fa import fa
+from .nd_dfa import nd_dfa
 from .support_ff import (
     f_fcn,
     f_fcn_without_overflaw,
