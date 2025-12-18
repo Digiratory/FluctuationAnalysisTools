@@ -2,13 +2,270 @@ import time
 from contextlib import closing
 from ctypes import c_double
 from functools import partial
-from math import ceil, exp, floor
-from multiprocessing import Array, Lock, Pool, Value, cpu_count
+from math import exp, floor
+from multiprocessing import Pool, cpu_count, Array, Lock, Value
+from typing import Union, Tuple
+from tqdm import TqdmWarning, tqdm
 from threading import Thread
 
-import numpy
-from tqdm import TqdmWarning, tqdm
+import numpy as np
+from StatTools.auxiliary import SharedBuffer
 
+
+# ====================== Вспомогательные функции DFA ======================
+
+def _detrend_segment(indices: np.ndarray, y_segment: np.ndarray, degree: int) -> float:
+    """
+    Detrending of a single data segment. Fits a polynomial and calculates
+    the mean squared residual (F^2).
+    """
+    coef = np.polyfit(indices, y_segment, deg=degree)
+    current_trend = np.polyval(coef, indices)
+    f2 = np.sum(np.power((y_segment - current_trend), 2)) / len(y_segment)
+    return f2
+
+
+def _fluctuation_function(f_q_s_sum: float, cycles_amount: int, degree: int, segment_length: int,
+                          root: bool = False) -> float:
+    """
+    Calculation of the fluctuation function F(s) for a given scale.
+    """
+    f1 = np.power(((1 / cycles_amount) * f_q_s_sum), 1 / degree)
+    if root:
+        return f1 / np.sqrt(segment_length)
+    else:
+        return f1
+
+
+def _hurst_exponent(x_axis: np.ndarray, y_axis: np.ndarray, simple_mode: bool = True) -> float:
+    """
+    Calculation of the Hurst exponent (scaling exponent) by fitting
+    log(F(s)) vs log(s) with a linear regression.
+    """
+    if simple_mode:
+        return np.polyfit(x_axis, y_axis, deg=1)[0]
+    else:
+        error_str = "\n    Non-linear approximation is non supported yet!"
+        raise NameError(error_str)
+
+
+# ====================== Основной воркер DFA ======================
+
+def dfa_worker(
+        indices: Union[int, list, np.ndarray],
+        arr: Union[np.ndarray, None] = None,
+        degree: int = 2,
+        root: bool = False,
+        buffer_in_use: bool = False,
+        simple_mode: bool = True,
+        s_values: Union[list, np.ndarray, None] = None,
+) -> Union[Tuple[np.ndarray, np.ndarray, float], list]:
+    """
+    Core of the DFA algorithm. Processes a subset of series (indices) and
+    returns fluctuation functions and scaling exponents.
+
+    Args:
+        indices: Indices of the time series in the dataset to process.
+        arr: Dataset array (ignored if buffer_in_use is True).
+        degree: Order of polynomial detrending.
+        root: If True, normalizes F(s) by sqrt(s).
+        buffer_in_use: Flag to use SharedBuffer for memory efficiency.
+        simple_mode: Use linear fit for Hurst exponent calculation.
+        s_values: Pre-calculated box sizes (scales).
+
+    Returns:
+        A list of tuples or a single tuple containing:
+        [log_s, log_F, h] where 'h' is the calculated Hurst exponent.
+    """
+    if buffer_in_use:
+        data = SharedBuffer.get("ARR").to_array()
+    else:
+        data = arr
+
+    if not isinstance(indices, (list, np.ndarray)):
+        indices = [indices]
+        single_output = True
+    else:
+        single_output = False
+
+    if s_values is None:
+        series_len = len(data) if data.ndim == 1 else data.shape[1]
+        s_max = int(series_len / 4)
+        s_values = [int(exp(step)) for step in np.arange(1.6, np.log(s_max), 0.5)]
+
+    results = []
+    data_ndim = data.ndim
+
+    for idx in indices:
+        series = data if data_ndim == 1 else data[idx]
+
+        # Standard DFA preprocessing: center and integrate
+        data_mean = np.mean(series)
+        data_centered = series - data_mean
+        y_cumsum = np.cumsum(data_centered)
+        series_len = len(data_centered)
+
+        log_s_vals = []
+        log_F_vals = []
+
+        for s_val in s_values:
+            if s_val >= series_len / 4: continue
+
+            s = np.linspace(1, s_val, s_val, dtype=int)
+            len_s = len(s)
+            cycles_amount = floor(series_len / len_s)
+
+            if cycles_amount < 1: continue
+
+            f_q_s_sum = 0
+            s_temp = s.copy()
+
+            for i in range(1, cycles_amount):
+                indices_s = np.array((s_temp - (i + 0.5) * len_s), dtype=int)
+                y_cumsum_s = np.take(y_cumsum, s_temp)
+
+                f2 = _detrend_segment(indices_s, y_cumsum_s, degree)
+                f_q_s_sum += np.power(f2, (degree / 2))
+                s_temp += s_val
+
+            f1 = _fluctuation_function(f_q_s_sum, cycles_amount, degree, len_s, root)
+            log_s_vals.append(np.log(s_val))
+            log_F_vals.append(np.log(f1))
+
+        log_s_vals = np.array(log_s_vals)
+        log_F_vals = np.array(log_F_vals)
+
+        h = _hurst_exponent(log_s_vals, log_F_vals, simple_mode)
+        results.append((log_s_vals, log_F_vals, h))
+
+    if single_output:
+        return results[0]
+    return results
+
+
+# ====================== Вспомогательная функция запуска Pool ======================
+
+def _run_in_pool(func, iterable, processes, buffer_array=None):
+    """
+    Universal process pool runner with optional SharedBuffer initialization.
+    """
+    pool_params = {}
+
+    if buffer_array is not None:
+        buffer_shape = buffer_array.shape
+        if len(buffer_shape) == 1:
+            buffer_shape = (1, buffer_shape[0])
+            buffer_array = buffer_array.reshape(1, -1)
+
+        shared_buffer = SharedBuffer(buffer_shape, c_double)
+        shared_buffer.write(buffer_array)
+
+        pool_params['initializer'] = shared_buffer.buffer_init
+        pool_params['initargs'] = ({"ARR": shared_buffer},)
+
+    with closing(Pool(processes=processes, **pool_params)) as pool:
+        return pool.map(func, iterable)
+
+
+# ====================== Управляющая функция DFA ======================
+
+def dfa(
+        dataset,
+        degree: int = 2,
+        root: bool = False,
+        processes: int = 1,
+        buffer: bool = False,
+        simple_mode: bool = True,
+) -> Tuple[np.ndarray, np.ndarray, Union[float, np.ndarray]]:
+    """
+    Implementation of the Detrended Fluctuation Analysis (DFA) method.
+
+    The algorithm removes local polynomial trends in integrated time series and
+    analyzes the scaling of the remaining fluctuations.
+
+    Args:
+        dataset (ndarray): 1D or 2D array of time series data.
+        degree (int): Polynomial degree for detrending (default: 2).
+        root (bool): If True, fluctuation function is divided by sqrt(s).
+        processes (int): Number of parallel workers (default: 1).
+        buffer (bool): If True, uses SharedBuffer for IPC (recommended for large datasets).
+        simple_mode (bool): If True, calculates a single Hurst exponent via linear fit.
+
+    Returns:
+        tuple: (log_s, log_F, Hurst_exponent)
+            - For 1D input: Returns three individual values/arrays.
+            - For 2D input: Returns arrays where each row corresponds to an input series.
+
+    Raises:
+        ValueError: If input dimension is not 1D or 2D.
+    """
+    dataset = np.array(dataset)
+    if dataset.ndim > 2 or dataset.ndim == 0:
+        raise ValueError("Only 1D or 2D arrays are allowed!")
+
+    series_len = len(dataset) if dataset.ndim == 1 else dataset.shape[1]
+    s_max = int(series_len / 4)
+    s_values = [int(exp(step)) for step in np.arange(1.6, np.log(s_max), 0.5)]
+
+    # Sequential execution
+    if not processes > 1:
+        indices = 0 if dataset.ndim == 1 else list(range(dataset.shape[0]))
+        result = dfa_worker(
+            indices, arr=dataset, degree=degree, root=root,
+            buffer_in_use=False, simple_mode=simple_mode, s_values=s_values
+        )
+        if dataset.ndim == 2:
+            return (
+                np.array([r[0] for r in result]),
+                np.array([r[1] for r in result]),
+                np.array([r[2] for r in result])
+            )
+        return result
+
+    # Parallel execution
+    processes = min(processes, cpu_count())
+    worker_args = {
+        'degree': degree, 'root': root,
+        'buffer_in_use': buffer, 'simple_mode': simple_mode
+    }
+
+    if dataset.ndim == 1:
+        # 1D Case: Parallelize by scales (S-values)
+        processes = min(processes, len(s_values))
+        chunks = np.array_split(s_values, processes)
+
+        worker_func = partial(dfa_worker, indices=0, **worker_args, arr=None if buffer else dataset)
+        task_func = lambda s_chunk: worker_func(s_values=s_chunk)
+
+        results = _run_in_pool(task_func, chunks, processes, buffer_array=dataset if buffer else None)
+
+        all_log_s = np.concatenate([r[0] for r in results])
+        all_log_F = np.concatenate([r[1] for r in results])
+        h_total = _hurst_exponent(all_log_s, all_log_F, simple_mode)
+
+        return all_log_s, all_log_F, h_total
+
+    else:
+        # 2D Case: Parallelize by series (rows)
+        n_series = dataset.shape[0]
+        processes = min(processes, n_series)
+        chunks = np.array_split(np.arange(n_series), processes)
+
+        task_func = partial(
+            dfa_worker,
+            arr=None if buffer else dataset,
+            s_values=s_values,
+            **worker_args
+        )
+
+        results_list_of_lists = _run_in_pool(task_func, chunks, processes, buffer_array=dataset if buffer else None)
+        flat_results = [item for sublist in results_list_of_lists for item in sublist]
+
+        return (
+            np.array([r[0] for r in flat_results]),
+            np.array([r[1] for r in flat_results]),
+            np.array([r[2] for r in flat_results])
+        )
 
 def bar_manager(description, total, counter, lock, mode="total", stop_bit=None):
     """
@@ -54,188 +311,51 @@ def bar_manager(description, total, counter, lock, mode="total", stop_bit=None):
         except TqdmWarning:
             return None
 
-def dfa_core_cycle_func(dataset, degree, root):
-    """
-            Core DFA algorithm implementation.
 
-            Computes the fluctuation function F(s) for different time scales s by:
-            1. Integrating the time series to get cumulative sum Y(i)
-            2. Dividing Y(i) into segments of length s
-            3. Fitting polynomial of degree 'degree' to each segment
-            4. Computing RMS fluctuation F(s) of detrended segments
-            5. Repeating for different scales s
-
-            Args:
-                dataset (numpy.ndarray): Input time series
-                degree (int): Polynomial degree for detrending
-                root (bool): Use root fluctuations if True
-
-            Returns:
-                tuple: (s_values, F_s_values) where:
-                    - s_values: Array of scale values (log-spaced)
-                    - F_s_values: Corresponding fluctuation function values
-            """
-    data_mean = numpy.mean(dataset)
-    data = dataset - data_mean
-    Y_cumsum = numpy.cumsum(data)
-
-    s_max = int(len(data) / 4)
-
-    log_s_max = numpy.arange(1.6, numpy.log(s_max), 0.5)
-
-    x_Axis = []
-    y_Axis = []
-
-    for step in log_s_max:
-        s = numpy.linspace(1, floor(exp(step)), floor(exp(step)), dtype=int)
-        cycles_amount = floor(len(data) / len(s))
-
-        F_q_s_sum = 0
-        for i in range(1, cycles_amount):
-            indices = numpy.array((s - (i + 0.5) * len(s)), dtype=int)
-            Y_cumsum_s = numpy.take(Y_cumsum, s)
-
-            coef = numpy.polyfit(indices, Y_cumsum_s, deg=degree)
-            current_trend = numpy.polyval(coef, indices)
-            F_2 = sum(pow((Y_cumsum_s - current_trend), 2)) / len(s)
-            F_q_s_sum += pow(F_2, (degree / 2))
-            s += floor(exp(step))
-
-        F1 = pow(((1 / cycles_amount) * F_q_s_sum), 1 / degree)
-        x_Axis.append(numpy.log(floor(exp(step))))
-        if root:
-            y_Axis.append(numpy.log(F1 / numpy.sqrt(len(s))))
-        else:
-            y_Axis.append(numpy.log(F1))
-    return numpy.array(x_Axis), numpy.array(y_Axis)
-
+# ====================== КЛАСС DFA (ОБЁРТКА) ======================
 class DFA:
     """
     Detrended Fluctuation Analysis (DFA) implementation for estimating Hurst exponent.
-
-    DFA is a method for determining the statistical self-affinity of a signal by analyzing
-    its fluctuation function F(s) as a function of time scale s. The Hurst exponent H
-    is estimated from the scaling relationship F(s) ~ s^H.
-
-    For fractional Brownian motion with Hurst exponent H:
-    - H < 0.5: Anti-persistent behavior
-    - H = 0.5: Random walk (uncorrelated)
-    - H > 0.5: Persistent behavior (long-range correlations)
-
-    Basic usage:
-        ```python
-        import numpy as np
-        from StatTools.analysis.dfa import DFA
-
-        # Generate sample data with known Hurst exponent
-        data = np.random.normal(0, 1, 10000)
-
-        # Create DFA analyzer
-        dfa = DFA(data, degree=2, root=False)
-
-        # Estimate Hurst exponent
-        hurst_exponent = dfa.find_h()
-
-        # For 2D data (multiple time series)
-        data_2d = np.random.normal(0, 1, (10, 10000))
-        dfa_2d = DFA(data_2d)
-        hurst_exponents = dfa_2d.find_h()  # Returns array of H values
-        ```
-
-    Args:
-        dataset (array-like): Input time series data. Can be:
-            - 1D numpy array for single time series
-            - 2D numpy array for multiple time series (shape: n_series x length)
-            - Path to text file containing data
-        degree (int): Polynomial degree for detrending (default: 2)
-        root (bool): If True, use root-mean-square fluctuations F(s) ~ s^{H-1}
-                    If False, use standard fluctuations F(s) ~ s^H (default: False)
-        ignore_input_control (bool): Skip input validation (default: False)
-
-    Attributes:
-        dataset (numpy.ndarray): Processed input data
-        degree (int): Polynomial degree for detrending
-        root (bool): Root fluctuation flag
-        s (numpy.ndarray): Scale values used in analysis
-        F_s (numpy.ndarray): Fluctuation function values
-
-    Raises:
-        NameError: If input file doesn't exist or has invalid format
-        ValueError: If input array has unsupported dimensions
     """
 
     def __init__(self, dataset, degree=2, root=False, ignore_input_control=False):
+        self.degree = degree
+        self.root = root
+        self.dataset = None
+        self.s = None
+        self.F_s = None
+
         if ignore_input_control:
-            s_return_1d, F_s_return_1d = self.dfa_core_cycle(dataset, degree, root)
-            self.s = s_return_1d
-            self.F_s = F_s_return_1d
+            result = dfa_worker(0, arr=dataset, degree=degree, root=root, buffer_in_use=False, simple_mode=True)
+            self.s, self.F_s, _ = result
         else:
-            if isinstance(dataset, type("string")):
+            if isinstance(dataset, str):
                 try:
-                    dataset = numpy.loadtxt(dataset)
+                    dataset = np.loadtxt(dataset)
                 except OSError:
-                    error_str = (
-                        "\n    The file either doesn't exit or you use wrong path!"
-                    )
-                    raise NameError(error_str)
+                    raise NameError("\n    The file either doesn't exit or you use wrong path!")
+                if np.size(dataset) == 0:
+                    raise NameError("\n    Input file is empty!")
 
-                if numpy.size(dataset) == 0:
-                    error_str = "\n    Input file is empty!"
-                    raise NameError(error_str)
-
-            if not isinstance(dataset, type(numpy.array([]))):
-                try:  # in case of list
-                    dataset = numpy.array(dataset, dtype=float)
-                except ValueError:
-                    error_str = "\n    Input dataset is supposed to be numpy array, list or directory!"
-                    raise NameError(error_str)
-
-            dataset = numpy.array(dataset)
+            if not isinstance(dataset, np.ndarray):
+                try:
+                    dataset = np.array(dataset, dtype=float)
+                except (ValueError, TypeError):
+                    raise NameError("\n    Input dataset is supposed to be numpy array, list or directory!")
 
             if dataset.ndim > 2 or dataset.ndim == 0:
-                error_str = "\n    You can not use such input array! Only 1- or 2-dimensional arrays are allowed!"
-                raise NameError(error_str)
+                raise NameError("\n    Only 1- or 2-dimensional arrays are allowed!")
 
-            self.dataset = dataset
-            self.degree = degree
-            self.root = root
+            series_len = len(dataset) if dataset.ndim == 1 else dataset.shape[1]
+            if series_len < 20:
+                raise NameError("Wrong input array ! (It's probably too short)")
 
-            if self.dataset.ndim == 1:
-                s_max = int(len(dataset) / 4)
-                try:
-                    log_s_max = numpy.arange(1.6, numpy.log(s_max), 0.5)
-                except ValueError:
-                    error_str = "\n    Wrong input array ! (It's probably too short)"
-                    raise NameError(error_str)
-                if numpy.size(log_s_max) < 1:
-                    error_str = "\n    Input array is too small! (It usually requires 20 or more samples!)"
-                    raise NameError(error_str)
-
-            if self.dataset.ndim == 2:
-
-                s_max = int(len(dataset[0]) / 4)
-                try:
-                    log_s_max = numpy.arange(1.6, numpy.log(s_max), 0.5)
-                except ValueError:
-                    error_str = "\n    Wrong input vectors in input matrix! (They are probably too short)"
-                    raise NameError(error_str)
-                if numpy.size(log_s_max) < 1:
-                    error_str = (
-                        "\n   Vectors in your input array are too short! Use longer vectors "
-                        "(it usually requires 20 or more samples) or transpose!"
-                    )
-                    raise NameError(error_str)
+            self.dataset = np.array(dataset)
 
     @staticmethod
     def initializer_for_parallel_mod(shared_array, h_est, shared_c, shared_l):
         """
         Initialize global variables for parallel processing.
-
-        Args:
-            shared_array: Shared memory array containing datasets
-            h_est: Shared array for storing Hurst exponent estimates
-            shared_c: Shared counter for progress tracking
-            shared_l: Shared lock for thread safety
         """
         global datasets_array
         global estimations
@@ -248,112 +368,51 @@ class DFA:
 
     @staticmethod
     def dfa_core_cycle(dataset, degree, root):
+        result = dfa_worker(0, arr=dataset, degree=degree, root=root, buffer_in_use=False, simple_mode=True)
 
-        return dfa_core_cycle_func(dataset, degree, root)
+        return result[0], result[1]
 
     def find_h(self, simple_mode=True):
         """
         Estimate Hurst exponent from fluctuation analysis.
-
-        Performs DFA on the dataset and fits a linear regression to the
-        log-log plot of F(s) vs s to estimate the Hurst exponent.
-
-        Args:
-            simple_mode (bool): If True, use simple linear regression.
-                               If False, non-linear fitting (not implemented)
-
-        Returns:
-            float or numpy.ndarray: Hurst exponent(s). Returns:
-                - Single float for 1D input data
-                - Array of floats for 2D input data (one per time series)
-
-        Raises:
-            NameError: If non-linear mode is requested (not implemented)
         """
-        if self.dataset.ndim == 1:
-            self.s, self.F_s = self.dfa_core_cycle(self.dataset, self.degree, self.root)
-        else:
-            self.s = numpy.array([])
-            self.F_s = numpy.array([])
-            for vector in self.dataset:
-                s, F_s = self.dfa_core_cycle(vector, self.degree, self.root)
-                if numpy.size(self.s) < 1:
-                    self.s = s
-                    self.F_s = F_s
-                else:
-                    self.s = numpy.vstack((self.s, s))
-                    self.F_s = numpy.vstack((self.F_s, F_s))
-
-        if simple_mode:
-
-            if self.s.ndim == 1:
-                return numpy.polyfit(self.s, self.F_s, deg=1)[0]
-            else:
-                h_estimation = []
-                for s, F_s in zip(self.s, self.F_s):
-                    h_estimation.append(numpy.polyfit(s, F_s, deg=1)[0])
-                return numpy.array(h_estimation)
-        else:
-            error_str = "\n    Non-linear approximation is non supported yet!"
+        if not simple_mode:
+            error_str = "\n    Non-linear approximation is not supported yet!"
             raise NameError(error_str)
 
+        result = dfa(self.dataset, self.degree, self.root, processes=1, buffer=False, simple_mode=True)
+        self.s, self.F_s, h_value = result
+        return h_value
+
     def parallel_2d(
-        self,
-        threads=cpu_count(),
-        progress_bar=False,
-        h_control=False,
-        h_target=float(),
-        h_limit=float(),
+            self,
+            threads=cpu_count(),
+            progress_bar=False,
+            h_control=False,
+            h_target=float(),
+            h_limit=float(),
     ):
-        """
-        Perform parallel DFA analysis on 2D datasets.
 
-        Processes multiple time series in parallel using multiprocessing.
-        Useful for large datasets with many time series.
-
-        Args:
-            threads (int): Number of parallel processes (default: CPU count)
-            progress_bar (bool): Show progress bar if True
-            h_control (bool): Enable Hurst exponent control mode
-            h_target (float): Target Hurst exponent for control mode
-            h_limit (float): Acceptable deviation from target H
-
-        Returns:
-            numpy.ndarray or tuple: Hurst exponents, or (H_values, invalid_indices)
-                                 if h_control is True
-
-        Raises:
-            ValueError: If dataset is too small for parallel processing
-        """
         if threads == 1 or self.dataset.ndim == 1:
             return self.find_h()
 
         if len(self.dataset) / threads < 1:
-            error_str = (
+            print(
                 "\n    DFA Warning: Input array is too small for using it in parallel mode!"
-                f"\n    You better use either less threads ({len(self.dataset)}) or don't use "
-                f"parallel mode at all!"
+                f"\n    You better use either less threads ({len(self.dataset)}) or don't use parallel mode!"
             )
-            print(error_str)
-            h_est = self.find_h()
-            return h_est
+            return self.find_h()
 
-        if len(self.dataset) / threads < 10:
-            error_str = (
-                "\n    DFA Warning: It may be not  so effective when using parallel mode with such small array!"
-                "\n    Spawning processes creates its own overhead!"
-            )
-            print(error_str)
-
-        vectors_indices_by_threads = numpy.array_split(
-            numpy.linspace(0, len(self.dataset) - 1, len(self.dataset), dtype=int),
+        vectors_indices_by_threads = np.array_split(
+            np.linspace(0, len(self.dataset) - 1, len(self.dataset), dtype=int),
             threads,
         )
 
         dataset_to_memory = Array(c_double, len(self.dataset) * len(self.dataset[0]))
         h_estimation_in_memory = Array(c_double, len(self.dataset))
-        numpy.copyto(
-            numpy.frombuffer(dataset_to_memory.get_obj()).reshape(
+
+        np.copyto(
+            np.frombuffer(dataset_to_memory.get_obj()).reshape(
                 (len(self.dataset), len(self.dataset[0]))
             ),
             self.dataset,
@@ -370,17 +429,18 @@ class DFA:
             bar_thread.start()
 
         with closing(
-            Pool(
-                processes=threads,
-                initializer=self.initializer_for_parallel_mod,
-                initargs=(
-                    dataset_to_memory,
-                    h_estimation_in_memory,
-                    shared_counter,
-                    shared_lock,
-                ),
-            )
+                Pool(
+                    processes=threads,
+                    initializer=self.initializer_for_parallel_mod,
+                    initargs=(
+                            dataset_to_memory,
+                            h_estimation_in_memory,
+                            shared_counter,
+                            shared_lock,
+                    ),
+                )
         ) as pool:
+            # map вызывает parallel_core, который теперь обёртка над dfa_worker
             invalid_i = pool.map(
                 partial(
                     self.parallel_core,
@@ -393,43 +453,41 @@ class DFA:
                 vectors_indices_by_threads,
             )
 
+        if progress_bar:
+            bar_thread.join()
+
         if h_control:
-            invalid_i = numpy.concatenate(invalid_i)
-            return numpy.frombuffer(h_estimation_in_memory.get_obj()), invalid_i
+            invalid_i = np.concatenate(invalid_i)
+            return np.frombuffer(h_estimation_in_memory.get_obj()), invalid_i
         else:
-            return numpy.frombuffer(h_estimation_in_memory.get_obj())
+            return np.frombuffer(h_estimation_in_memory.get_obj())
 
     def parallel_core(self, indices, quantity, length, h_control, h_target, h_limit):
-        """
-        Core parallel processing function for DFA analysis.
 
-        Processes a subset of time series indices in parallel.
-
-        Args:
-            indices (numpy.ndarray): Array indices to process
-            quantity (int): Total number of time series
-            length (int): Length of each time series
-            h_control (bool): Enable Hurst exponent control
-            h_target (float): Target Hurst exponent
-            h_limit (float): Acceptable deviation limit
-
-        Returns:
-            numpy.ndarray: Array of invalid indices if h_control enabled,
-                          empty array otherwise
-        """
         invalid_i = []
+
+        all_data = np.frombuffer(datasets_array.get_obj()).reshape((quantity, length))
+
         for i in indices:
-            vector = numpy.frombuffer(datasets_array.get_obj()).reshape(
-                (quantity, length)
-            )[i]
-            x_ax, y_ax = self.dfa_core_cycle(vector, self.degree, self.root)
-            lin_reg = numpy.polyfit(x_ax, y_ax, deg=1)[0]
-            numpy.frombuffer(estimations.get_obj())[i] = lin_reg
+            vector = all_data[i]
+            result = dfa_worker(
+                indices=0,
+                arr=vector,
+                degree=self.degree,
+                root=self.root,
+                buffer_in_use=False,
+                simple_mode=True
+            )
+
+            h_calc = result[2]
+
+            np.frombuffer(estimations.get_obj())[i] = h_calc
+
             with shared_lock:
                 shared_counter.value += 1
 
             if h_control:
-                if abs(lin_reg - h_target) > h_limit:
+                if abs(h_calc - h_target) > h_limit:
                     invalid_i.append(i)
 
-        return numpy.array(invalid_i)
+        return np.array(invalid_i)
