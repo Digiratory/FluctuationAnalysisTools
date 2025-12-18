@@ -15,3 +15,6 @@ wheelhouse/*
 research/out/*
 
 *.pyd
+.clinerules/*
+memory-bank/*
+filter_matrices
