@@ -115,6 +115,87 @@ def dpcca_worker(
     return P, R, F
 
 
+def tdc_dpcca(
+    s: Union[int, Iterable],
+    arr: np.ndarray,
+    step: float,
+    pd: int,
+    time_delays: Union[int, Iterable] = None,
+    max_time_delay: int = None,
+    flag_use_lags: bool = False,  # флаг есть ли временные задержки
+    gc_params: tuple = None,
+    n_integral: int = 1,
+) -> tuple[tuple, None]:
+
+    if not flag_use_lags:
+        return dpcca_worker(s, arr, step, pd, gc_params, n_integral=n_integral)
+
+    s_current = [s] if isinstance(s, int) else list(s)
+
+    if time_delays is not None:
+        time_delay_list = np.ndarray(time_delays, dtype=int)
+    elif max_time_delay is not None:
+        time_delay_list = np.arange(-max_time_delay - 1, max_time_delay, dtype=int)
+    else:
+        raise ValueError("должны быть лаги")
+
+    n_lags = len(time_delay_list)
+    N = arr.shape
+
+    cumsum_arr = arr
+    for _ in range(n_integral):
+        cumsum_arr = np.cumsum(cumsum_arr, axis=1)  # интегральная сумма
+    F = np.zeros((n_lags, len(s_current), N, N), dtype=np.float64)  # ковариация
+    R = np.zeros(
+        (n_lags, len(s_current), N, N), dtype=np.float64
+    )  # уровни кросс корреляции
+    P = np.zeros(
+        (n_lags, len(s_current), N, N), dtype=np.float64
+    )  # частичная кросс корреляция
+
+    for s_i, s_val in enumerate(s_current):
+        signal_view = np.lib.stride_tricks.sliding_window_view(
+            cumsum_arr, window_shape=s_val, axis=1
+        )
+        signal_view = signal_view[:, :: int(step * s_val)]
+        # n_windows = signal_view.shape[1]
+        Xw = np.arange(s_val, dtype=int)
+        Y_detrended = np.zeros_like(signal_view, dtype=np.float64)
+        for n in range(cumsum_arr.shape[0]):
+            for w_i in range(n_windows):
+                W = signal_view[n, w_i]
+                p = np.polyfit(Xw, W, deg=pd)
+                Z = np.polyval(p, Xw)
+                Y_detrended[n, w_i] = Z - W
+    #     for lag_i, tau in enumerate(time_delay_list):
+    #         if tau == 0:
+    #             Y1 = Y_detrended
+    #             Y2 = Y_detrended
+    #             valid_windows = n_windows
+    #         elif tau > 0:
+    #             Y1 = Y_detrended[:, :-tau]
+    #             Y2 = Y_detrended[:, tau:]
+    #             valid_windows = n_windows - tau
+    #         else:
+    #             tau_abs = -tau
+    #             if tau_abs >= n_windows:
+    #                 continue
+    #             Y1 = Y_detrended[:, tau_abs:]
+    #             Y2 = Y_detrended[:, :-tau_abs]
+    #             valid_windows = n_windows - tau_abs
+
+    #         if valid_windows <= 0:
+    #             continue
+    #         Y1_flat = Y1.reshape(N, -1)
+    #         Y2_flat = Y2.reshape(N, -1)
+    #         cov_lagged = np.dot(Y1_flat, Y2_flat.T) / Y1_flat.shape[1]
+    #         F[lag_i, s_i] = cov_lagged
+    #         R[lag_i, s_i] = _correlation(cov_lagged)
+    #         P[lag_i, s_i] = _cross_correlation(R[lag_i, s_i])
+
+    # return P, R, F
+
+
 def concatenate_3d_matrices(p: np.ndarray, r: np.ndarray, f: np.ndarray):
     P = np.concatenate(p, axis=1)[0]
     R = np.concatenate(r, axis=1)[0]
