@@ -1,5 +1,7 @@
 """Symbolic Kalman filter."""
 
+from functools import lru_cache
+
 from sympy import (
     Function,
     Matrix,
@@ -7,10 +9,9 @@ from sympy import (
     symbols,
 )
 
-from functools import lru_cache
 
 @lru_cache(maxsize=None)
-def nth_order_derivative(n: int, k):
+def nth_order_derivative(n: int, k: int):
     """Get the nth order derivative of x(k)."""
     x = Function("x")
     if n <= 1:
@@ -28,6 +29,7 @@ def get_all_coeffs(expr, n: int) -> dict:
         if term != 0:
             coeffs[i] = simplify(term)
     return coeffs
+
 
 @lru_cache(maxsize=None)
 def Fmij_formula(n: int, i: int, j: int):
