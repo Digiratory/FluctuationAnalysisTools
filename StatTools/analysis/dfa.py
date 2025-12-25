@@ -3,25 +3,27 @@ from contextlib import closing
 from ctypes import c_double
 from functools import partial
 from math import exp, floor
-from multiprocessing import Pool, cpu_count, Array, Lock, Value
+from multiprocessing import Array, Lock, Pool, Value, cpu_count
 from threading import Thread
-from typing import Union, Tuple
+from typing import Tuple, Union
 
 import numpy as np
 from tqdm import TqdmWarning, tqdm
 
-
 # ====================== DFA core worker ======================
 
-def _detrend_segment(y_segment: np.ndarray, indices: np.ndarray, degree: int) -> np.ndarray:
+
+def _detrend_segment(
+    y_segment: np.ndarray, indices: np.ndarray, degree: int
+) -> np.ndarray:
     """
     Compute detrended residuals for a single segment.
-    
+
     Args:
         y_segment: Integrated time series segment.
         indices: Indices for polynomial fitting.
         degree: Polynomial degree for detrending.
-    
+
     Returns:
         Residuals (detrended segment).
     """
@@ -31,30 +33,15 @@ def _detrend_segment(y_segment: np.ndarray, indices: np.ndarray, degree: int) ->
     return residuals
 
 
-def _fluctuation_function(f_q_s_sum: float, cycles_amount: int, degree: int) -> float:
-    """
-    Compute fluctuation function F(s) from accumulated sum.
-    
-    Args:
-        f_q_s_sum: Accumulated sum of (f2)^(degree/2) over all segments.
-        cycles_amount: Number of segments processed.
-        degree: Polynomial degree used in detrending.
-    
-    Returns:
-        Fluctuation function F(s).
-    """
-    return ((1.0 / cycles_amount) * f_q_s_sum) ** (1.0 / degree)
-
-
 def dfa_worker(
-        indices: Union[int, list, np.ndarray],
-        arr: Union[np.ndarray, None] = None,
-        degree: int = 2,
-        s_values: Union[list, np.ndarray, None] = None,
+    indices: Union[int, list, np.ndarray],
+    arr: Union[np.ndarray, None] = None,
+    degree: int = 2,
+    s_values: Union[list, np.ndarray, None] = None,
 ) -> list:
     """
     Core of the DFA algorithm. Processes a subset of series (indices) and
-    returns fluctuation functions F(s).
+    returns fluctuation functions F^2(s).
 
     Args:
         indices: Indices of time series in the dataset to process.
@@ -63,7 +50,7 @@ def dfa_worker(
         s_values: Pre-calculated box sizes (scales).
 
     Returns:
-        list of (s, F_s) for each requested index.
+        list of (s, F2_s) for each requested index, where F2_s is F^2(s).
     """
     data = np.asarray(arr, dtype=float)
 
@@ -94,57 +81,58 @@ def dfa_worker(
         series_len = len(data_centered)
 
         s_list = []
-        F_list = []
+        f2_list = []
 
         for s_val in s_values:
             if s_val >= series_len / 4:
                 continue
 
-            s = np.linspace(1, s_val, s_val, dtype=int)
+            s = np.arange(1, s_val + 1, dtype=int)
             len_s = len(s)
             cycles_amount = floor(series_len / len_s)
             if cycles_amount < 1:
                 continue
 
-            f_q_s_sum = 0.0
+            f2_sum = 0.0
             s_temp = s.copy()
 
             for i in range(1, cycles_amount):
-                indices_s = np.array((s_temp - (i + 0.5) * len_s), dtype=int)
-                y_cumsum_s = np.take(y_cumsum, s_temp)
+                indices_s = (s_temp - (i + 0.5) * len_s).astype(int)
+                y_cumsum_s = y_cumsum[s_temp]
 
                 # Compute detrended residuals for this segment
                 residuals = _detrend_segment(y_cumsum_s, indices_s, degree)
 
-                # Mean squared residual 
-                f2 = np.sum(residuals ** 2) / len_s
+                # Mean squared residual in the window
+                f2 = np.sum(residuals**2) / len_s
 
-                # Accumulate according to the definition of F_q(s)
-                f_q_s_sum += f2 ** (degree / 2)
+                # Accumulate mean squared residuals to get F^2(s)
+                f2_sum += f2
                 s_temp += s_val
 
-            # Compute fluctuation function F(s)
-            F_s = _fluctuation_function(f_q_s_sum, cycles_amount, degree)
+            # Fluctuation function F^2(s)
+            f2_s = f2_sum / cycles_amount
             s_list.append(s_val)
-            F_list.append(F_s)
+            f2_list.append(f2_s)
 
-        results.append((np.array(s_list), np.array(F_list)))
+        results.append((np.array(s_list), np.array(f2_list)))
 
     return results
 
 
 # ====================== High-level DFA function ======================
 
+
 def dfa(
-        dataset,
-        degree: int = 2,
-        processes: int = 1,
+    dataset,
+    degree: int = 2,
+    processes: int = 1,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Implementation of the Detrended Fluctuation Analysis (DFA) method.
 
     The algorithm removes local polynomial trends in integrated time series and
-    returns the fluctuation function F(s) for each series.
+    returns the fluctuation function F^2(s) for each series.
 
     Args:
         dataset (ndarray): 1D or 2D array of time series data.
@@ -152,11 +140,11 @@ def dfa(
         processes (int): Number of parallel workers (default: 1).
 
     Returns:
-        tuple: (s, F_s)
-            - For 1D input: two 1D arrays s, F_s.
+        tuple: (s, F2_s)
+            - For 1D input: two 1D arrays s, F2_s.
             - For 2D input:
                 s is a 1D array (same scales for all series),
-                F_s is a 2D array where each row is F(s) for one time series.
+                F2_s is a 2D array where each row is F^2(s) for one time series.
     """
     data = np.asarray(dataset, dtype=float)
 
@@ -205,19 +193,20 @@ def dfa(
         results = flat_results
 
     s_list = [r[0] for r in results]
-    F_list = [r[1] for r in results]
+    f2_list = [r[1] for r in results]
 
     if single_series:
         s_out = s_list[0]
-        F_out = F_list[0]
+        f2_out = f2_list[0]
     else:
         s_out = s_list[0]
-        F_out = np.vstack(F_list)
+        f2_out = np.vstack(f2_list)
 
-    return s_out, F_out
+    return s_out, f2_out
 
 
 # ====================== Progress bar manager ======================
+
 
 def bar_manager(description, total, counter, lock, mode="total", stop_bit=None):
     """
@@ -264,9 +253,58 @@ def bar_manager(description, total, counter, lock, mode="total", stop_bit=None):
 
 # ====================== DFA wrapper class ======================
 
+
 class DFA:
     """
-    Detrended Fluctuation Analysis (DFA) wrapper class for estimating the Hurst exponent.
+    Detrended Fluctuation Analysis (DFA) implementation for estimating Hurst exponent.
+
+    DFA is a method for determining the statistical self-affinity of a signal by analyzing
+    its fluctuation function F(s) as a function of time scale s. The Hurst exponent H
+    is estimated from the scaling relationship F(s) ~ s^H.
+
+    For fractional Brownian motion with Hurst exponent H:
+    - H < 0.5: Anti-persistent behavior
+    - H = 0.5: Random walk (uncorrelated)
+    - H > 0.5: Persistent behavior (long-range correlations)
+
+    Basic usage:
+
+        import numpy as np
+        from StatTools.analysis.dfa import DFA
+
+        # Generate sample data with known Hurst exponent
+        data = np.random.normal(0, 1, 10000)
+
+        # Create DFA analyzer
+        dfa = DFA(data, degree=2, root=False)
+
+        # Estimate Hurst exponent
+        hurst_exponent = dfa.find_h()
+
+        # For 2D data (multiple time series)
+        data_2d = np.random.normal(0, 1, (10, 10000))
+        dfa_2d = DFA(data_2d)
+        hurst_exponents = dfa_2d.find_h()  # Returns array of H values
+
+    Args:
+        dataset (array-like): Input time series data. Can be:
+            - 1D numpy array for single time series
+            - 2D numpy array for multiple time series (shape: n_series x length)
+            - Path to text file containing data
+        degree (int): Polynomial degree for detrending (default: 2)
+        root (bool): Kept for backward compatibility, not used in current implementation (default: False)
+        ignore_input_control (bool): Skip input validation (default: False)
+
+    Attributes:
+        dataset (numpy.ndarray): Processed input data
+        degree (int): Polynomial degree for detrending
+        root (bool): Root fluctuation flag (kept for backward compatibility, not used)
+        s (numpy.ndarray): Scale values used in analysis
+        F_s (numpy.ndarray): Fluctuation function squared values F^2(s)
+
+    Raises:
+        NameError: If input file doesn't exist or has invalid format
+        ValueError: If input array has unsupported dimensions
     """
 
     def __init__(self, dataset, degree=2, root=False, ignore_input_control=False):
@@ -280,25 +318,27 @@ class DFA:
             ignore_input_control: Skip input validation (default: False).
         """
         self.degree = degree
-        self.root = root  
+        self.root = root
         self.dataset = None
         self.s = None
         self.F_s = None
 
         if ignore_input_control:
-            s_vals, F_vals = dfa(
+            scales, fluct2_values = dfa(
                 dataset,
                 degree=self.degree,
                 processes=1,
             )
-            self.s = s_vals
-            self.F_s = F_vals
+            self.s = scales
+            self.F_s = fluct2_values
         else:
             if isinstance(dataset, str):
                 try:
                     dataset = np.loadtxt(dataset)
                 except OSError:
-                    raise NameError("\n    The file either doesn't exist or the path is wrong!")
+                    raise NameError(
+                        "\n    The file either doesn't exist or the path is wrong!"
+                    )
                 if np.size(dataset) == 0:
                     raise NameError("\n    Input file is empty!")
 
@@ -306,7 +346,9 @@ class DFA:
                 try:
                     dataset = np.array(dataset, dtype=float)
                 except (ValueError, TypeError):
-                    raise NameError("\n    Input dataset is supposed to be numpy array, list or filepath!")
+                    raise NameError(
+                        "\n    Input dataset is supposed to be numpy array, list or filepath!"
+                    )
 
             if dataset.ndim > 2 or dataset.ndim == 0:
                 raise NameError("\n    Only 1- or 2-dimensional arrays are allowed!")
@@ -318,17 +360,26 @@ class DFA:
             self.dataset = np.array(dataset)
 
     @staticmethod
-    def _hurst_exponent(x_axis: np.ndarray, y_axis: np.ndarray, simple_mode: bool = True) -> float:
+    def _hurst_exponent(
+        x_axis: np.ndarray, y_axis: np.ndarray, simple_mode: bool = True
+    ) -> float:
         """
-        Calculate the Hurst exponent (scaling exponent) by fitting
-        y_axis vs x_axis with a linear regression.
-        Here we assume x_axis = log(s), y_axis = log(F(s)).
+        Calculate the slope of linear regression between x_axis and y_axis.
+
+        Args:
+            x_axis: Independent variable array.
+            y_axis: Dependent variable array.
+            simple_mode: If True, use linear fit (default: True).
+
+        Returns:
+            float: Slope of the linear regression.
         """
-        if simple_mode:
-            return np.polyfit(x_axis, y_axis, deg=1)[0]
-        else:
+        if not simple_mode:
             error_str = "\n    Non-linear approximation is not supported yet!"
             raise NameError(error_str)
+
+        slope = np.polyfit(x_axis, y_axis, deg=1)[0]
+        return slope
 
     @staticmethod
     def initializer_for_parallel_mod(shared_array, h_est, shared_c, shared_l):
@@ -347,12 +398,16 @@ class DFA:
     @staticmethod
     def dfa_core_cycle(dataset, degree, root):
         """
-        Perform DFA for a single vector and return (s, F_s).
+        Perform DFA for a single vector and return (log(s), log(F(s))).
+
+        For backward compatibility, returns the same format as the original implementation:
+        - log(s): logarithm of scale values
+        - log(F(s)): logarithm of fluctuation function values
 
         Args:
             dataset: Input time series data (1D or 2D).
             degree: Polynomial degree for detrending.
-            root: Kept for backward compatibility, not used.
+            root: Kept for backward compatibility, not used in current implementation.
         """
         data = np.asarray(dataset, dtype=float)
         if data.ndim == 1:
@@ -364,8 +419,14 @@ class DFA:
             degree=degree,
             s_values=None,
         )
-        s_vals, F_vals = result_list[0]
-        return s_vals, F_vals
+        scales, fluct2_values = result_list[0]
+
+        # Convert to log format for backward compatibility
+        log_s = np.log(scales)
+        # Extract F(s) from F^2(s) and take logarithm
+        log_f = np.log(np.sqrt(fluct2_values))
+
+        return log_s, log_f
 
     def find_h(self, simple_mode=True):
         """
@@ -377,7 +438,7 @@ class DFA:
 
         Args:
             simple_mode: Kept for backward compatibility, not used
-                         (always uses linear fit).
+                        (always uses linear fit).
         """
         if not simple_mode:
             error_str = "\n    Non-linear approximation is not supported yet!"
@@ -386,74 +447,90 @@ class DFA:
         if self.dataset is None:
             raise NameError("\n    Dataset is not initialized for DFA.find_h!")
 
-        s_vals, F_vals = dfa(
+        scales, fluct2_values = dfa(
             self.dataset,
             self.degree,
             processes=1,
         )
-        self.s, self.F_s = s_vals, F_vals
+        self.s, self.F_s = scales, fluct2_values
+
+        log_s = np.log(self.s)
 
         if self.dataset.ndim == 1:
-            log_s = np.log(self.s)
-            log_F = np.log(self.F_s)
-            h_value = self._hurst_exponent(log_s, log_F, simple_mode=True)
-            return h_value
+            log_f = np.log(np.sqrt(self.F_s))
+            slope = self._hurst_exponent(log_s, log_f, simple_mode=True)
+            h_value = slope
         else:
             n_series = self.dataset.shape[0]
-            log_s = np.log(self.s)  
             h_array = np.empty(n_series, dtype=float)
             for i in range(n_series):
-                log_F = np.log(self.F_s[i])
-                h_array[i] = self._hurst_exponent(log_s, log_F, simple_mode=True)
-            return h_array
+                log_f = np.log(np.sqrt(self.F_s[i]))
+                slope = self._hurst_exponent(log_s, log_f, simple_mode=True)
+                h_array[i] = slope
+            h_value = h_array
+
+        return h_value
 
     def parallel_2d(
-            self,
-            threads=cpu_count(),
-            progress_bar=False,
-            h_control=False,
-            h_target=float(),
-            h_limit=float(),
+        self,
+        threads=cpu_count(),
+        progress_bar=False,
+        h_control=False,
+        h_target=float(),
+        h_limit=float(),
     ):
         """
         Parallel computation of Hurst exponents for 2D datasets.
-        """
-        if threads == 1 or self.dataset.ndim == 1:
-            return self.find_h()
 
-        if len(self.dataset) / threads < 1:
+        Args:
+            threads (int): Number of parallel processes (default: CPU count).
+            progress_bar (bool): Show progress bar if True (default: False).
+            h_control (bool): Enable Hurst exponent control mode (default: False).
+            h_target (float): Target Hurst exponent for control mode.
+            h_limit (float): Acceptable deviation from target H.
+
+        Returns:
+            numpy.ndarray or tuple: Hurst exponents, or (H_values, invalid_indices) if h_control is True.
+        """
+        result = None
+
+        if threads == 1 or self.dataset.ndim == 1:
+            result = self.find_h()
+        elif len(self.dataset) / threads < 1:
             print(
                 "\n    DFA Warning: Input array is too small for using it in parallel mode!"
                 f"\n    You should either use fewer threads ({len(self.dataset)}) or avoid parallel mode!"
             )
-            return self.find_h()
-
-        vectors_indices_by_threads = np.array_split(
-            np.linspace(0, len(self.dataset) - 1, len(self.dataset), dtype=int),
-            threads,
-        )
-
-        dataset_to_memory = Array(c_double, len(self.dataset) * len(self.dataset[0]))
-        h_estimation_in_memory = Array(c_double, len(self.dataset))
-
-        np.copyto(
-            np.frombuffer(dataset_to_memory.get_obj()).reshape(
-                (len(self.dataset), len(self.dataset[0]))
-            ),
-            self.dataset,
-        )
-
-        shared_counter = Value("i", 0)
-        shared_lock = Lock()
-
-        if progress_bar:
-            bar_thread = Thread(
-                target=bar_manager,
-                args=("DFA", len(self.dataset), shared_counter, shared_lock),
+            result = self.find_h()
+        else:
+            vectors_indices_by_threads = np.array_split(
+                np.linspace(0, len(self.dataset) - 1, len(self.dataset), dtype=int),
+                threads,
             )
-            bar_thread.start()
 
-        with closing(
+            dataset_to_memory = Array(
+                c_double, len(self.dataset) * len(self.dataset[0])
+            )
+            h_estimation_in_memory = Array(c_double, len(self.dataset))
+
+            np.copyto(
+                np.frombuffer(dataset_to_memory.get_obj()).reshape(
+                    (len(self.dataset), len(self.dataset[0]))
+                ),
+                self.dataset,
+            )
+
+            shared_counter = Value("i", 0)
+            shared_lock = Lock()
+
+            if progress_bar:
+                bar_thread = Thread(
+                    target=bar_manager,
+                    args=("DFA", len(self.dataset), shared_counter, shared_lock),
+                )
+                bar_thread.start()
+
+            with closing(
                 Pool(
                     processes=threads,
                     initializer=self.initializer_for_parallel_mod,
@@ -464,31 +541,45 @@ class DFA:
                         shared_lock,
                     ),
                 )
-        ) as pool:
-            invalid_i = pool.map(
-                partial(
-                    self.parallel_core,
-                    quantity=len(self.dataset),
-                    length=len(self.dataset[0]),
-                    h_control=h_control,
-                    h_target=h_target,
-                    h_limit=h_limit,
-                ),
-                vectors_indices_by_threads,
-            )
+            ) as pool:
+                invalid_i = pool.map(
+                    partial(
+                        self.parallel_core,
+                        quantity=len(self.dataset),
+                        length=len(self.dataset[0]),
+                        h_control=h_control,
+                        h_target=h_target,
+                        h_limit=h_limit,
+                    ),
+                    vectors_indices_by_threads,
+                )
 
-        if progress_bar:
-            bar_thread.join()
+            if progress_bar:
+                bar_thread.join()
 
-        if h_control:
-            invalid_i = np.concatenate(invalid_i)
-            return np.frombuffer(h_estimation_in_memory.get_obj()), invalid_i
-        else:
-            return np.frombuffer(h_estimation_in_memory.get_obj())
+            if h_control:
+                invalid_i = np.concatenate(invalid_i)
+                result = (np.frombuffer(h_estimation_in_memory.get_obj()), invalid_i)
+            else:
+                result = np.frombuffer(h_estimation_in_memory.get_obj())
+
+        return result
 
     def parallel_core(self, indices, quantity, length, h_control, h_target, h_limit):
         """
         Core function for parallel computation of Hurst exponents.
+
+        Args:
+            indices: Array indices to process.
+            quantity: Total number of time series.
+            length: Length of each time series.
+            h_control: Enable Hurst exponent control.
+            h_target: Target Hurst exponent.
+            h_limit: Acceptable deviation limit.
+
+        Returns:
+            numpy.ndarray: Array of invalid indices if h_control enabled,
+                         empty array otherwise.
         """
         invalid_i = []
 
@@ -506,10 +597,12 @@ class DFA:
                 degree=self.degree,
                 s_values=None,
             )
-            s_vals, F_vals = result_list[0]
-            log_s = np.log(s_vals)
-            log_F = np.log(F_vals)
-            h_calc = self._hurst_exponent(log_s, log_F, simple_mode=True)
+            scales, fluct2_values = result_list[0]
+
+            log_s = np.log(scales)
+            log_f = np.log(np.sqrt(fluct2_values))
+            slope = self._hurst_exponent(log_s, log_f, simple_mode=True)
+            h_calc = slope
 
             np.frombuffer(estimations.get_obj())[i] = h_calc
 
