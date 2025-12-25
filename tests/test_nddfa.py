@@ -4,6 +4,8 @@ from scipy.stats import linregress
 
 from StatTools.analysis.nd_dfa import nd_dfa
 
+TEST_H_VALUES = [0.3, 0.5, 0.7, 0.9, 1.0, 1.25]
+
 
 def generate_2d_fbms(size, H, seed=None):
     """
@@ -89,7 +91,8 @@ def estimate_hurst(F2, S):
 
 
 class TestNDDFA:
-    @pytest.mark.parametrize("H", [0.3, 0.5, 0.7, 0.9, 1.0, 1.25])
+    @pytest.mark.timeout(300)  # 5 minutes timeout
+    @pytest.mark.parametrize("H", TEST_H_VALUES)
     def test_fbms_hurst_estimation(self, H):
         """Test Hurst exponent estimation on synthetic fBm surfaces"""
         size = 128
@@ -113,6 +116,7 @@ class TestNDDFA:
             f"estimated={H_est:.3f}, expected={H}"
         )
 
+    @pytest.mark.timeout(300)  # 5 minutes timeout
     def test_white_noise_profile(self):
         """Test white noise (H=0.5) with proper integration"""
         size = 128
@@ -134,6 +138,7 @@ class TestNDDFA:
             abs(H_est - 0.5) < 0.15
         ), f"White noise test failed: estimated H={H_est:.3f}, expected 0.5"
 
+    @pytest.mark.timeout(300)  # 5 minutes timeout
     def test_edge_cases(self):
         """Test edge cases and boundary conditions"""
         # Small non-cubic array (made larger to satisfy scale constraints)
@@ -169,6 +174,7 @@ class TestNDDFA:
         assert len(S) == 1, "Should handle single scale input"
         assert S[0] == 8, "Should use the exact scale specified"
 
+    @pytest.mark.timeout(300)  # 5 minutes timeout
     def test_incorrect_order_comparison(self):
         """
         Verify that pre-partition integration gives wrong results
@@ -210,6 +216,7 @@ class TestNDDFA:
             f"correct_error={correct_error:.3f}, incorrect_error={incorrect_error:.3f}"
         )
 
+    @pytest.mark.timeout(300)  # 5 minutes timeout
     def test_polynomial_detrending(self):
         """Test polynomial detrending with known trend"""
         size = 64

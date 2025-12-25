@@ -17,3 +17,5 @@ research/out/*
 *.pyd
 .clinerules/*
 memory-bank/*
+.theia/*
+.prompts/*

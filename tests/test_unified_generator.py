@@ -13,6 +13,7 @@ testdata = {
 }
 
 
+@pytest.mark.timeout(300)  # 5 minutes timeout
 @pytest.mark.parametrize("hurst", testdata["hurst_values"])
 @pytest.mark.parametrize("length", testdata["lengths"])
 @pytest.mark.parametrize("method", testdata["methods"])
@@ -52,6 +53,7 @@ def test_unified_generator_basic(hurst: float, length: int, method: str):
     assert 0.5 < std < 2.0, f"Standard deviation should be reasonable, got {std}"
 
 
+@pytest.mark.timeout(300)  # 5 minutes timeout
 @pytest.mark.parametrize("hurst", testdata["hurst_values"])
 def test_unified_generator_default_method(hurst: float):
     """
@@ -114,6 +116,7 @@ def test_backward_compatibility():
     assert sequence.shape == (length,)
 
 
+@pytest.mark.timeout(300)  # 5 minutes timeout
 @pytest.mark.parametrize("hurst", [0.2, 0.5, 0.8, 1.2, 1.5])
 def test_unified_generator_various_hurst(hurst: float):
     """
