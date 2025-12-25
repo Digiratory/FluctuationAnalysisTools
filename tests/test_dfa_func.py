@@ -142,7 +142,7 @@ def test_dfa_1d_with_known_h(sample_signals, h):
     log_f = np.log(np.sqrt(f2_vals))  # Extract sqrt from F^2 to get F
     res = stats.linregress(log_s, log_f)
 
-    assert res.slope == pytest.approx(h, abs=0.1)
+    assert res.slope == pytest.approx(h, rel=0.15)
 
 
 @pytest.mark.parametrize("h", TEST_H_VALUES)
@@ -161,7 +161,7 @@ def test_dfa_1d_parallel(sample_signals, h):
     log_f = np.log(np.sqrt(f2_vals))  # Extract sqrt from F^2 to get F
     res = stats.linregress(log_s, log_f)
 
-    assert res.slope == pytest.approx(h, abs=0.1)
+    assert res.slope == pytest.approx(h, rel=0.15)
 
 
 def test_dfa_2d_input():
@@ -190,7 +190,8 @@ def test_dfa_2d_input():
     for i, h_target in enumerate(h_list):
         log_f = np.log(np.sqrt(f2_vals[i]))  # Extract sqrt from F^2 to get F
         res = stats.linregress(log_s, log_f)
-        assert res.slope == pytest.approx(h_target, abs=0.1)
+        # Use relative tolerance like in test_utils.py (15% relative tolerance)
+        assert res.slope == pytest.approx(h_target, rel=0.15)
 
 
 def test_dfa_2d_parallel():
@@ -216,7 +217,8 @@ def test_dfa_2d_parallel():
     for i, h_target in enumerate(h_list):
         log_f = np.log(np.sqrt(f2_vals[i]))  # Extract sqrt from F^2 to get F
         res = stats.linregress(log_s, log_f)
-        assert res.slope == pytest.approx(h_target, abs=0.1)
+        # Use relative tolerance like in test_utils.py (15% relative tolerance)
+        assert res.slope == pytest.approx(h_target, rel=0.15)
 
 
 def test_dfa_different_degrees():
