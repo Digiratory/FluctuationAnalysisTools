@@ -15,9 +15,9 @@ N_RUNS_CI = 1
 N_MAX_CI = 2**13
 
 H_VALUES = H_VALUES_CI if IN_GITHUB_ACTIONS else [0.3, 0.5, 0.8]
-N_LEN = N_CI if IN_GITHUB_ACTIONS else 2**13
+N_LEN = N_CI if IN_GITHUB_ACTIONS else 2**16
 N_RUNS = N_RUNS_CI if IN_GITHUB_ACTIONS else 1
-N_MAX = N_MAX_CI if IN_GITHUB_ACTIONS else 2**13
+N_MAX = N_MAX_CI
 
 """
 ------------------------------------------------------------
