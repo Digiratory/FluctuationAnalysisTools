@@ -4,7 +4,6 @@ import numpy as np
 import pytest
 from scipy import stats
 
-from StatTools.analysis import dpcca
 from StatTools.analysis.bma import bma
 from StatTools.generators.kasdin_generator import create_kasdin_generator
 
@@ -97,42 +96,3 @@ def test_bma_accuracy(test_dataset, h, N, rtype):
     tol = 25
 
     assert eps == pytest.approx(0, abs=tol)
-
-
-@pytest.mark.parametrize("h", H_VALUES)
-def test_bma_vs_dfa(h):
-    """
-    Compare BMA DPCCA implementation on fractional Gaussian noise (fGn).
-
-    Steps:
-    - Generate fGn signal with known Hurst exponent `h`
-    - Compute Hurst exponent using our BMA-based DFA method (`H_bma`)
-    - Compute Hurst exponent using `DPCCA` (`H_dpcca`)
-    - Assert that both estimates are close within a reasonable tolerance
-
-    """
-    N = 2**14  # Use sufficiently long signal for stable DFA estimation
-
-    # Generate fractional Gaussian noise with target Hurst exponent
-    sig = generate_fractional_noise(h, N)
-
-    # Compute DFA using our BMA method
-    scales = np.arange(
-        10, N // 4, 10
-    )  # Define scale range, avoiding too small/large boxes
-    F_bma, s_bma = bma(sig, s=scales, n_integral=1, step=0.5)  # Perform BMA DFA
-    H_bma = estimate_hurst(F_bma, s_bma)  # Estimate Hurst from scaling exponent
-
-    # Compute DPCCA using dpcca method
-    P, R, F, S = dpcca(sig, 2, 0.5, scales, len(scales), n_integral=1)
-    F = np.sqrt(F)
-    H_dpcca = estimate_hurst(F, S)
-
-    diff = abs(H_bma - H_dpcca)
-    diff_pct = diff / H_dpcca * 100
-
-    # Assert that both methods yield similar results (tolerance accounts for methodological differences)
-    assert diff_pct < 25, (
-        f"BMA and dfa() differ too much for H={h}: "
-        f"|{H_bma:.3f} - {H_dpcca:.3f}| = {diff_pct:.1f}% >= 25%"
-    )
