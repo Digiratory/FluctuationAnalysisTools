@@ -137,7 +137,7 @@ class DPCCA:
             S_by_workers = np.array_split(S, processes)
 
             if processes == 1:
-                return self._dpcca_worker(s) + s
+                return self._dpcca_worker(s, force_gc=force_gc) + s
 
             if isinstance(self.arr, np.ndarray):
                 chunk = SharedBuffer(self.shape, c_double)
