@@ -135,6 +135,7 @@ For questions and discussions:
 - `DPCCA`: Detrended Partial Cross-Correlation Analysis
 - `FA`: Fluctuation Analysis
 - `QSS`: Quantile Segmentation Statistics
+- `BMA`: Backward Moving Average
 
 ### Filters
 
