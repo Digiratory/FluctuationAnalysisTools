@@ -32,7 +32,7 @@ jobs:
           /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
           brew install numpy scipy
           python -m pip install --upgrade pip wheel setuptools
-          pip install -r requirements.txt
+          pip install -e .
           pip install pytest
 
       - name: Install dependencies
@@ -40,13 +40,8 @@ jobs:
         shell: bash
         run: |
           python -m pip install --upgrade pip wheel
-          pip install -r requirements.txt
+          pip install -e .
           pip install pytest
-
-      - name: Install FluctuationAnalysisTools
-        shell: bash
-        run: |
-          pip install .
 
       - name: Run tests
         run: |
