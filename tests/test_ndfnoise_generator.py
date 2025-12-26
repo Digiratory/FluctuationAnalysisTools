@@ -25,7 +25,6 @@ def get_h_dfa_sliced(arr: np.ndarray) -> np.ndarray:
         h_values = DFA(arr).find_h()
         return h_values
     nx = arr.shape[0]
-    ny = arr.shape[1]
     nz = arr.shape[2]
     results = np.zeros(nx)
 
