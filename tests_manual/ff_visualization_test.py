@@ -15,7 +15,7 @@ from StatTools.analysis.utils import (
     ff_params,
     var_estimation,
 )
-from StatTools.visualization.ff_plot import plot_ff
+from StatTools.visualization.ff_plot import ff_plot
 
 tst_s = np.array(
     [0.01, 0.1, 0.3, 0.5, 1, 1.5, 2.5, 5, 7.5, 10, 15, 20, 50, 100, 250, 500, 1000]
@@ -53,13 +53,13 @@ tst_h_multiple = tst_hr_multiple_approx * tst_h_multiple
 
 
 fig, axs = plt.subplots(1, 2)
-plot_ff(tst_h_multiple, tst_s, ff_params_new, ax=axs[0])
+ff_plot(tst_h_multiple, tst_s, ff_params_new, ax=axs[0])
 ff_parameters_approx, residuals_approx = analyse_cross_ff(
     tst_h_multiple, tst_s, crossover_amount=len(cross)
 )
 
 
-plot_ff(
+ff_plot(
     tst_h_multiple,
     tst_s,
     ff_parameter=ff_parameters_approx,
