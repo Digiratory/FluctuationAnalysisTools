@@ -1,4 +1,5 @@
 import time
+import warnings
 from contextlib import closing
 from ctypes import c_double
 from functools import partial
@@ -38,6 +39,7 @@ def dfa_worker(
     arr: Union[np.ndarray, None] = None,
     degree: int = 2,
     s_values: Union[list, np.ndarray, None] = None,
+    n_integral: int = 1,
 ) -> list:
     """
     Core of the DFA algorithm. Processes a subset of series (indices) and
@@ -48,6 +50,7 @@ def dfa_worker(
         arr: Dataset array (must be 2D, shape: (n_series, length)).
         degree: Polynomial degree for detrending.
         s_values: Pre-calculated box sizes (scales).
+        n_integral: Number of cumulative sum operations to apply (default: 1).
 
     Returns:
         list of (s, F2_s) for each requested index, where F2_s is F^2(s).
@@ -77,7 +80,9 @@ def dfa_worker(
 
         # Standard DFA preprocessing: mean-centering and integration
         data_centered = series - np.mean(series)
-        y_cumsum = np.cumsum(data_centered)
+        y_cumsum = data_centered
+        for _ in range(n_integral):
+            y_cumsum = np.cumsum(y_cumsum)
         series_len = len(data_centered)
 
         s_list = []
@@ -127,6 +132,7 @@ def dfa(
     dataset,
     degree: int = 2,
     processes: int = 1,
+    n_integral: int = 1,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Implementation of the Detrended Fluctuation Analysis (DFA) method.
@@ -138,6 +144,7 @@ def dfa(
         dataset (ndarray): 1D or 2D array of time series data.
         degree (int): Polynomial degree for detrending (default: 2).
         processes (int): Number of parallel workers (default: 1).
+        n_integral (int): Number of cumulative sum operations to apply (default: 1).
 
     Returns:
         tuple: (s, F2_s)
@@ -170,6 +177,7 @@ def dfa(
             arr=data,
             degree=degree,
             s_values=s_values,
+            n_integral=n_integral,
         )
     else:
         processes = min(processes, cpu_count(), n_series)
@@ -180,6 +188,7 @@ def dfa(
             arr=data,
             degree=degree,
             s_values=s_values,
+            n_integral=n_integral,
         )
 
         results_list_of_lists = []
@@ -307,7 +316,13 @@ class DFA:
         ValueError: If input array has unsupported dimensions
     """
 
-    def __init__(self, dataset, degree=2, root=False, ignore_input_control=False):
+    def __init__(
+        self,
+        dataset: Union[np.ndarray, list, str],
+        degree: int = 2,
+        root: bool = False,
+        ignore_input_control: bool = False,
+    ) -> None:
         """
         Initialize DFA analyzer.
 
@@ -328,6 +343,7 @@ class DFA:
                 dataset,
                 degree=self.degree,
                 processes=1,
+                n_integral=1,
             )
             self.s = scales
             self.F_s = fluct2_values
@@ -382,7 +398,12 @@ class DFA:
         return slope
 
     @staticmethod
-    def initializer_for_parallel_mod(shared_array, h_est, shared_c, shared_l):
+    def initializer_for_parallel_mod(
+        shared_array: Array,
+        h_est: Array,
+        shared_c: Value,
+        shared_l: Lock,
+    ) -> None:
         """
         Initialize global variables for parallel processing.
         """
@@ -396,7 +417,11 @@ class DFA:
         shared_lock = shared_l
 
     @staticmethod
-    def dfa_core_cycle(dataset, degree, root):
+    def dfa_core_cycle(
+        dataset: Union[np.ndarray, list],
+        degree: int,
+        root: bool,
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Perform DFA for a single vector and return (log(s), log(F(s))).
 
@@ -418,6 +443,7 @@ class DFA:
             arr=data,
             degree=degree,
             s_values=None,
+            n_integral=1,
         )
         scales, fluct2_values = result_list[0]
 
@@ -428,7 +454,7 @@ class DFA:
 
         return log_s, log_f
 
-    def find_h(self, simple_mode=True):
+    def find_h(self, simple_mode: bool = True) -> Union[float, np.ndarray]:
         """
         Estimate the Hurst exponent from fluctuation analysis.
 
@@ -451,6 +477,7 @@ class DFA:
             self.dataset,
             self.degree,
             processes=1,
+            n_integral=1,
         )
         self.s, self.F_s = scales, fluct2_values
 
@@ -473,12 +500,12 @@ class DFA:
 
     def parallel_2d(
         self,
-        threads=cpu_count(),
-        progress_bar=False,
-        h_control=False,
-        h_target=float(),
-        h_limit=float(),
-    ):
+        threads: int = cpu_count(),
+        progress_bar: bool = False,
+        h_control: bool = False,
+        h_target: float = float(),
+        h_limit: float = float(),
+    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         """
         Parallel computation of Hurst exponents for 2D datasets.
 
@@ -497,9 +524,10 @@ class DFA:
         if threads == 1 or self.dataset.ndim == 1:
             result = self.find_h()
         elif len(self.dataset) / threads < 1:
-            print(
-                "\n    DFA Warning: Input array is too small for using it in parallel mode!"
-                f"\n    You should either use fewer threads ({len(self.dataset)}) or avoid parallel mode!"
+            warnings.warn(
+                f"Input array is too small for using it in parallel mode! "
+                f"You should either use fewer threads ({len(self.dataset)}) or avoid parallel mode!",
+                UserWarning,
             )
             result = self.find_h()
         else:
@@ -565,7 +593,15 @@ class DFA:
 
         return result
 
-    def parallel_core(self, indices, quantity, length, h_control, h_target, h_limit):
+    def parallel_core(
+        self,
+        indices: np.ndarray,
+        quantity: int,
+        length: int,
+        h_control: bool,
+        h_target: float,
+        h_limit: float,
+    ) -> np.ndarray:
         """
         Core function for parallel computation of Hurst exponents.
 
@@ -596,6 +632,7 @@ class DFA:
                 arr=vector_2d,
                 degree=self.degree,
                 s_values=None,
+                n_integral=1,
             )
             scales, fluct2_values = result_list[0]
 
