@@ -13,10 +13,10 @@ from StatTools.generators.kasdin_generator import create_kasdin_generator
 IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
 
 H_VALUES_CI = [0.3, 0.5, 0.8]
-LENGTHS_CI = [2**10, 2**14]
+LENGTHS_CI = [2**14, 2**16]
 
 H_VALUES = H_VALUES_CI if IN_GITHUB_ACTIONS else [0.3, 0.5, 0.8]
-LENGTHS = LENGTHS_CI if IN_GITHUB_ACTIONS else [2**10, 2**14]
+LENGTHS = LENGTHS_CI if IN_GITHUB_ACTIONS else [2**14, 2**16]
 
 
 # ------------------------------------------------------------
