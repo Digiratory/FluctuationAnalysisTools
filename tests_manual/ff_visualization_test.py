@@ -15,7 +15,7 @@ from StatTools.analysis.utils import (
     ff_params,
     var_estimation,
 )
-from StatTools.visualization.ff_plot import plot_ff
+from StatTools.visualization.plot_ff import plot_ff
 
 tst_s = np.array(
     [0.01, 0.1, 0.3, 0.5, 1, 1.5, 2.5, 5, 7.5, 10, 15, 20, 50, 100, 250, 500, 1000]

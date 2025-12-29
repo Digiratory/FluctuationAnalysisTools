@@ -9,4 +9,10 @@ from .support_ff import (
     tf_minus_inf,
     tf_plus_inf,
 )
-from .utils import analyse_cross_ff, cross_fcn_sloped, ff_params, var_estimation
+from .utils import (
+    analyse_cross_ff,
+    analyse_zero_cross_ff,
+    cross_fcn_sloped,
+    ff_params,
+    var_estimation,
+)
