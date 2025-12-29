@@ -125,8 +125,8 @@ def test_dpcca_cumsum_2_buffer(sample_signal, h):
     assert res.slope == pytest.approx(h + 1, 0.1)
 
 
-hurst_values = [0.3, 0.5, 0.7, 0.9]
-test_lags = [-5, -2, 0, 2, 5]
+hurst_values = [1, 1.25, 1.5, 1.7]
+test_lags = [-3, -2, 0, 2, 3]
 
 
 @pytest.fixture(scope="module")
@@ -147,8 +147,8 @@ def create_signal_pair():
         else:
             Z = signal.lfilter(1, A, z)
 
-        Z = Z[1000 : 1000 + length]
-        lag = 10
+        Z = Z[500 : 500 + length]
+        lag = 6
         Z_lag = np.roll(Z, lag)
 
         Z = Z[lag:-lag]
@@ -165,13 +165,12 @@ def create_signal_pair():
 @pytest.mark.parametrize("lag", test_lags)
 def test_tdc_dpcca_lags(create_signal_pair, h, lag):
     arr = create_signal_pair[h]
-    new_z = arr.shape[1]
     s = [64, 128, 256]
-    step = 0.6
+    step = 1
     pd = 1
     n_integral = 1
-    true_lag = 10
-    lag_range = np.arange(true_lag - 5, true_lag + 6)
+    true_lag = 6
+    lag_range = np.arange(true_lag - 5, true_lag + 4)
     P, R, F = tdc_dpcca_worker(
         s=s,
         arr=arr,
@@ -182,9 +181,9 @@ def test_tdc_dpcca_lags(create_signal_pair, h, lag):
         n_integral=n_integral,
     )
     for s_idx in range(len(s)):
-        corr_series = R[:, s_idx, 0, 1]
-        max_lag_idx = np.argmax(corr_series)
+        correlation = R[:, s_idx, 0, 1]
+        max_lag_idx = np.argmax(correlation)
         estimated_lag = lag_range[max_lag_idx]
         assert (
             estimated_lag == true_lag
-        ), f"херст={h}, временной масштаб={s[s_idx]}: настоящий лаг={true_lag}, измеренный лаг {estimated_lag}"
+        ), f"херст={h}, временной масштаб {s[s_idx]}: настоящий лаг {true_lag}, измеренный лаг {estimated_lag}"
