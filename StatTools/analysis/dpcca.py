@@ -11,17 +11,19 @@ import numpy as np
 from StatTools.auxiliary import SharedBuffer
 
 
-def _covariation(signal: np.ndarray):
+def _covariation(signal_1: np.ndarray, signal_2: np.ndarray = None):
     """
     Implementation equation (4) from [1]
 
     [1] Yuan, N., Fu, Z., Zhang, H. et al. Detrended Partial-Cross-Correlation Analysis: A New Method for Analyzing Correlations in Complex System. Sci Rep 5, 8143 (2015). https://doi.org/10.1038/srep08143
     """
-    F = np.zeros((signal.shape[0], signal.shape[0]), dtype=float)
-    for n in range(signal.shape[0]):
-        for m in range(n + 1):
-            F[n][m] = np.mean(signal[n] * signal[m])
-            signal[m][n] = signal[n][m]
+    if signal_2 is None:
+        signal_2 = signal_1
+    F = np.zeros((signal_1.shape[0], signal_1.shape[0]), dtype=float)
+    for n in range(signal_1.shape[0]):
+        for m in range(signal_2.shape[0]):
+            F[n][m] = np.mean(signal_1[n] * signal_2[m])
+            F[m][n] = F[n][m]
     return F
 
 
@@ -171,6 +173,7 @@ def tdc_dpcca_worker(
                 p = np.polyfit(Xw, W, deg=pd)  # нахождение фита для тренда
                 Z = np.polyval(p, Xw)  # фит для тренда
                 Y_detrended[n, w_i] = W - Z
+
         for lag_i, tau in enumerate(time_delay_list):
             if tau == 0:
                 Y1 = Y_detrended
