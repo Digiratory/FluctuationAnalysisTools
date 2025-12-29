@@ -115,7 +115,7 @@ def dpcca_worker(
     return P, R, F
 
 
-def tdc_dpcca(
+def tdc_dpcca_worker(
     s: Union[int, Iterable],
     arr: np.ndarray,
     step: float,
@@ -133,14 +133,14 @@ def tdc_dpcca(
     s_current = [s] if isinstance(s, int) else list(s)
 
     if time_delays is not None:
-        time_delay_list = np.ndarray(time_delays, dtype=int)
+        time_delay_list = np.array(time_delays, dtype=int)
     elif max_time_delay is not None:
         time_delay_list = np.arange(-max_time_delay - 1, max_time_delay, dtype=int)
     else:
         raise ValueError("должны быть лаги")
 
     n_lags = len(time_delay_list)
-    N = arr.shape
+    N = arr.shape[0]
 
     cumsum_arr = arr
     for _ in range(n_integral):
@@ -158,42 +158,56 @@ def tdc_dpcca(
             cumsum_arr, window_shape=s_val, axis=1
         )
         signal_view = signal_view[:, :: int(step * s_val)]
-        # n_windows = signal_view.shape[1]
-        Xw = np.arange(s_val, dtype=int)
+        n_windows = signal_view.shape[
+            1
+        ]  # идти по стобцам каждого окна(общее число скользящих окон)
+        Xw = np.arange(s_val, dtype=int)  # ранжирование временных масштабов
         Y_detrended = np.zeros_like(signal_view, dtype=np.float64)
-        for n in range(cumsum_arr.shape[0]):
-            for w_i in range(n_windows):
-                W = signal_view[n, w_i]
-                p = np.polyfit(Xw, W, deg=pd)
-                Z = np.polyval(p, Xw)
-                Y_detrended[n, w_i] = Z - W
-    #     for lag_i, tau in enumerate(time_delay_list):
-    #         if tau == 0:
-    #             Y1 = Y_detrended
-    #             Y2 = Y_detrended
-    #             valid_windows = n_windows
-    #         elif tau > 0:
-    #             Y1 = Y_detrended[:, :-tau]
-    #             Y2 = Y_detrended[:, tau:]
-    #             valid_windows = n_windows - tau
-    #         else:
-    #             tau_abs = -tau
-    #             if tau_abs >= n_windows:
-    #                 continue
-    #             Y1 = Y_detrended[:, tau_abs:]
-    #             Y2 = Y_detrended[:, :-tau_abs]
-    #             valid_windows = n_windows - tau_abs
-
-    #         if valid_windows <= 0:
-    #             continue
-    #         Y1_flat = Y1.reshape(N, -1)
-    #         Y2_flat = Y2.reshape(N, -1)
-    #         cov_lagged = np.dot(Y1_flat, Y2_flat.T) / Y1_flat.shape[1]
-    #         F[lag_i, s_i] = cov_lagged
-    #         R[lag_i, s_i] = _correlation(cov_lagged)
-    #         P[lag_i, s_i] = _cross_correlation(R[lag_i, s_i])
-
-    # return P, R, F
+        for n in range(cumsum_arr.shape[0]):  # массив по каждому сигналу
+            for w_i in range(n_windows):  # массив по каждому окну временному
+                W = signal_view[
+                    n, w_i
+                ]  # значение конкертного сигнала в конкретном временном окне
+                p = np.polyfit(Xw, W, deg=pd)  # нахождение фита для тренда
+                Z = np.polyval(p, Xw)  # фит для тренда
+                Y_detrended[n, w_i] = W - Z
+        for lag_i, tau in enumerate(time_delay_list):
+            if tau == 0:
+                Y1 = Y_detrended
+                Y2 = Y_detrended
+                current_windows = n_windows
+            elif tau > 0:
+                Y1 = Y_detrended[
+                    :, :-tau
+                ]  # сдвиг первого сигнала (остается прежним сигналом)
+                Y2 = Y_detrended[:, tau:]  # отделяется часть с начала равная сдвигу
+                current_windows = (
+                    n_windows - tau
+                )  # сдвиг для окна(выбор оставшихся окон)
+            else:
+                tau_minus = -tau
+                if tau_minus >= n_windows:
+                    continue  # проверка чтобы лаг был не больше колличества окон
+                Y1 = Y_detrended[:, tau_minus:]
+                Y2 = Y_detrended[:, :-tau_minus]
+                current_windows = n_windows - tau_minus
+            if current_windows <= 0:
+                continue  # проверка чтобы лаг был не больше колличества окон
+            Y1_flat = Y1.reshape(N, -1)  # представление в одномерном массиве
+            Y2_flat = Y2.reshape(N, -1)
+            # F = np.zeros((Y1_flat, Y2_flat), dtype=float)
+            # for i in Y1_flat:
+            #     for j in Y2_flat:
+            #         F[i][j] = np.mean(i*j)
+            #         covariation=F[i][j]
+            covariation = np.zeros((N, N), dtype=np.float64)
+            for i in range(N):
+                for j in range(N):
+                    covariation[i, j] = np.mean(Y1_flat[i] * Y2_flat[j])
+            F[lag_i, s_i] = covariation
+            R[lag_i, s_i] = _correlation(covariation)
+            P[lag_i, s_i] = _cross_correlation(R[lag_i, s_i])
+    return P, R, F
 
 
 def concatenate_3d_matrices(p: np.ndarray, r: np.ndarray, f: np.ndarray):
