@@ -3,6 +3,7 @@ from functools import partial
 
 import numpy as np
 from scipy.optimize import curve_fit
+from scipy.stats import linregress
 
 from StatTools.analysis.support_ff import (
     f_fcn,
@@ -221,4 +222,43 @@ def analyse_cross_ff(
             ],
         ),
         10 ** change_cross_value(np.log10(s), 0, *popt) - hs,
+    )
+
+
+def analyse_zero_cross_ff(
+    hs: np.ndarray,
+    S: np.ndarray,
+) -> tuple[ff_params, np.ndarray]:
+    """Approximates the fluctuation function with one Hurst coefficient using linear least squares regression.
+
+    This function fits a model with zero crossover points to the fluctuation function data. It returns the fitted parameters with their
+    standard errors and the residuals of the fit.
+
+    Args:
+        hs (np.ndarray): The dependent data array, length M.
+        S (np.ndarray): The independent variable array, shape (k, M).
+    Returns:
+        tuple[ff_params, np.ndarray]: A tuple containing the fitted parameters as an ff_params dataclass
+        instance and the residuals as a numpy array.
+    """
+
+    s = np.repeat(S[np.newaxis, :], hs.shape[0], axis=0)
+    log_s = np.log10(s)
+    log_hs = np.log10(hs)
+    x = log_s.flatten()
+    y = log_hs.flatten()
+    result = linregress(x, y)
+
+    fit_model = 10 ** (result.slope * np.log10(s) + result.intercept)
+    residuals = fit_model - hs
+    return (
+        ff_params(
+            intercept=var_estimation(
+                value=result.intercept, stderr=result.intercept_stderr
+            ),
+            cross=[],
+            slopes=[var_estimation(value=result.slope, stderr=result.stderr)],
+            ridigity=[],
+        ),
+        residuals,
     )
