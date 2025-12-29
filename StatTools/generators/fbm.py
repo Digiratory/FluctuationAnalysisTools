@@ -4,10 +4,10 @@ from math import floor
 from random import gauss
 from typing import Optional
 
+from C_StatTools import fbm_core
 from numpy import array, max, min, ndarray, uint8, zeros
 from numpy.random import randn
 
-from C_StatTools import fbm_core
 from StatTools.auxiliary import SharedBuffer
 
 
