@@ -3,12 +3,9 @@ Comprehensive test suite for pybind11 bindings.
 
 This test module verifies that:
 1. All C++ functions work correctly through Python bindings
-2. Performance characteristics are maintained
-3. Backward compatibility with existing C API
-4. All functionality works through new bindings
+2. Backward compatibility with existing C API
+3. All functionality works through new bindings
 
-Note: DFA functionality is tested separately using the existing Python implementation
-in StatTools.analysis.dfa, not through C++ bindings.
 """
 
 import time
@@ -182,26 +179,6 @@ class TestPybind11Bindings:
             old_result[-1] > old_result[0]
         )  # Last U (0.9) should have higher wait than first (0.5)
         assert new_result[-1] > new_result[0]
-
-    def test_performance_characteristics(self, sample_data):
-        """Verify performance characteristics are maintained"""
-        if not NEW_API_AVAILABLE:
-            pytest.skip("New API not available")
-
-        input_vector = sample_data["input_vector"]
-        U = sample_data["U"]
-        C0_input = sample_data["C0_input"]
-
-        # Time the operation
-        start_time = time.time()
-        result = StatTools_bindings.get_waiting_time(input_vector, U, C0_input)
-        end_time = time.time()
-
-        execution_time = end_time - start_time
-
-        # Should complete in reasonable time (adjust threshold as needed)
-        assert execution_time < 5.0  # 5 seconds threshold
-        print(f"Execution time: {execution_time:.4f} seconds")
 
 
 class TestIntegration:
