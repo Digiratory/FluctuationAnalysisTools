@@ -28,7 +28,6 @@ def test_multiple_crossovers_utils(arguments):
     """
     C_ij, slope_ij, R_ij = arguments
     C_ij_log = list(np.log10(C_ij))
-    y = [0]
     all_values = C_ij_log + slope_ij + R_ij
     tst_s = np.array(
         [
