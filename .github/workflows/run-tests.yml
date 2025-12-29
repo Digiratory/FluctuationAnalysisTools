@@ -12,7 +12,28 @@ permissions:
   contents: read
 
 jobs:
+  pre-commit-validation:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install pre-commit
+        run: |
+          pip install pre-commit
+
+      - name: Run pre-commit validation
+        run: |
+          pre-commit run --all-files
+
   test:
+    needs: pre-commit-validation
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
