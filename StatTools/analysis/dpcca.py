@@ -21,7 +21,7 @@ def _covariation(signal: np.ndarray):
     for n in range(signal.shape[0]):
         for m in range(n + 1):
             F[n][m] = np.mean(signal[n] * signal[m])
-            signal[m][n] = signal[n][m]
+            F[m][n] = F[n][m]
     return F
 
 
