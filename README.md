@@ -20,9 +20,16 @@ A Python library for creating and processing long-term dependent datasets, with 
 
 ## Features
 
-- **Synthetic Data Generation**: Create datasets with controlled statistical properties (Hurst exponent, long-term dependencies)
-- **Fluctuation Analysis**: Perform Detrended Fluctuation Analysis (DFA), Detrended Partial Cross-Correlation Analysis (DPCCA), and other methods
-- **Signal Processing**: Apply filters and transformations to time series data
+- **Synthetic Data Generation**: Create datasets with controlled statistical properties (Hurst exponent, long-term dependencies) including:
+  - Kasdin method for fractional Brownian noise (Kasdin, N. J. (1995). Discrete simulation of colored noise and stochastic processes and 1/f/sup /spl alpha// power law noise generation.).
+  - FFT-based N-dimensional fractional Brownian motion (fBm) generator (Timmer, J., & Koenig, M. (1995). On generating power law noise).
+- **Fluctuation Analysis**: Perform various fluctuation analysis methods including:
+  - Detrended Fluctuation Analysis (DFA)
+  - Detrended Partial Cross-Correlation Analysis (DPCCA)
+  - Standard Fluctuation Analysis (FA)
+  - SVD-based DFA
+  - Multidimensional DFA
+  - Quantitative Signal Analysis (QSS)
 - **Research Tools**: Support scientific research in complex systems exhibiting long-range correlations
 - **Performance Optimized**: Multi-threaded implementations with C++ extensions for large datasets
 
