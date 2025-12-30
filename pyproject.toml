@@ -17,11 +17,14 @@ authors = [
   {name = "Aleksandr Sinitca", email = "amsinitca@etu.ru"},
   {name = "Alexandr Kuzmenko", email = "alexander.k.spb@gmail.com"},
   {name = "Asya Lyanova", email = "ailianova@etu.ru"},
+  {name = "Maya Gavrichenkova"},
+  {name = "Timofey Baburin"},
+  {name = "Olga Ivleva"},
 ]
 maintainers = [
   {name = "Aleksandr Sinitca", email = "amsinitca@etu.ru"}
 ]
-description = "This library allows to create and process long-term dependent datasets."
+description = "Python library for DFA, Hurst exponent, and fluctuation analysis of time series."
 readme = "README.md"
 license = {text = "MIT"}
 dependencies = [
@@ -37,9 +40,9 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/Digiratory/StatTools.git"
-Issues = "https://github.com/Digiratory/StatTools/issues"
-Changelog = "https://github.com/Digiratory/StatTools/blob/main/CHANGELOG.md"
+Repository = "https://github.com/Digiratory/FluctuationAnalysisTools.git"
+Issues = "https://github.com/Digiratory/FluctuationAnalysisTools/issues"
+Changelog = "https://github.com/Digiratory/FluctuationAnalysisTools/blob/main/CHANGELOG.md"
 
 [tool.setuptools_scm]
 version_file = "StatTools/_version.py"
