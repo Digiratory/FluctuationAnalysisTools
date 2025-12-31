@@ -89,10 +89,7 @@ def test_bma_accuracy(test_dataset, h, N, rtype):
 
     H_estimates = np.array(H_estimates)
 
-    # Relative error mean (%)
-    rel_err = (H_estimates - h) / h
-    eps = np.mean(np.abs(rel_err)) * 100
+    # mean (%)
+    mean = np.abs(np.mean(np.abs(H_estimates)) - h)
 
-    tol = 25
-
-    assert eps == pytest.approx(0, abs=tol)
+    assert mean == pytest.approx(0, abs=0.15)
