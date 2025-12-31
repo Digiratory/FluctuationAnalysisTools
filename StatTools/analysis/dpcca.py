@@ -11,6 +11,53 @@ import numpy as np
 from StatTools.auxiliary import SharedBuffer
 
 
+def _covariation(signal: np.ndarray):
+    """
+    Implementation equation (4) from [1]
+
+    [1] Yuan, N., Fu, Z., Zhang, H. et al. Detrended Partial-Cross-Correlation Analysis: A New Method for Analyzing Correlations in Complex System. Sci Rep 5, 8143 (2015). https://doi.org/10.1038/srep08143
+    """
+    F = np.zeros((signal.shape[0], signal.shape[0]), dtype=float)
+    for n in range(signal.shape[0]):
+        for m in range(n + 1):
+            F[n][m] = np.mean(signal[n] * signal[m])
+            F[m][n] = F[n][m]
+    return F
+
+
+def _correlation(F: np.ndarray):
+    """
+    Implementation equation (6) from [1]
+    [1] Yuan, N., Fu, Z., Zhang, H. et al. Detrended Partial-Cross-Correlation Analysis: A New Method for Analyzing Correlations in Complex System. Sci Rep 5, 8143 (2015). https://doi.org/10.1038/srep08143
+    """
+    R = np.zeros((F.shape[0], F.shape[0]), dtype=float)
+    for n in range(F.shape[0]):
+        for m in range(n + 1):
+            R[n][m] = F[n][m] / np.sqrt(F[n][n] * F[m][m])
+            R[m][n] = R[n][m]
+    return R
+
+
+def _cross_correlation(R: np.ndarray):
+    """
+    Implementation equation (9) from [1]
+    [1] Yuan, N., Fu, Z., Zhang, H. et al. Detrended Partial-Cross-Correlation Analysis: A New Method for Analyzing Correlations in Complex System. Sci Rep 5, 8143 (2015). https://doi.org/10.1038/srep08143
+    """
+    P = np.zeros((R.shape[0], R.shape[0]), dtype=float)
+    Cinv = np.linalg.inv(R)
+    for n in range(R.shape[0]):
+        for m in range(n + 1):
+            if Cinv[n][n] * Cinv[m][m] < 0:
+                print(f" Error: Sqrt(-1)! No P array values for this S!")
+                break
+            P[n][m] = -Cinv[n][m] / np.sqrt(Cinv[n][n] * Cinv[m][m])
+            P[m][n] = P[n][m]
+        else:
+            continue
+        break
+    return P
+
+
 # @profile()
 def dpcca_worker(
     s: Union[int, Iterable],
@@ -63,35 +110,11 @@ def dpcca_worker(
                     if n % gc_params[0] == 0:
                         gc.collect(gc_params[1])
 
-                # loop_func(cumsum_arr, n, v, v_i, s_val, Xw, pd, Y)
-
         Y = np.array([np.concatenate(Y[i]) for i in range(Y.shape[0])])
 
-        for n in range(shape[0]):
-            for m in range(n + 1):
-                F[s_i][n][m] = np.mean(Y[n] * Y[m])  # / (s_val - 1)
-                F[s_i][m][n] = F[s_i][n][m]
-
-        for n in range(shape[0]):
-            for m in range(n + 1):
-                R[s_i][n][m] = F[s_i][n][m] / np.sqrt(F[s_i][n][n] * F[s_i][m][m])
-                R[s_i][m][n] = R[s_i][n][m]
-
-        Cinv = np.linalg.inv(R[s_i])
-
-        for n in range(shape[0]):
-            for m in range(n + 1):
-                if Cinv[n][n] * Cinv[m][m] < 0:
-                    print(
-                        f"S = {s_val} | Error: Sqrt(-1)! No P array values for this S!"
-                    )
-                    break
-
-                P[s_i][n][m] = -Cinv[n][m] / np.sqrt(Cinv[n][n] * Cinv[m][m])
-                P[s_i][m][n] = P[s_i][n][m]
-            else:
-                continue
-            break
+        F[s_i] = _covariation(Y)
+        R[s_i] = _correlation(F[s_i])
+        P[s_i] = _cross_correlation(R[s_i])
 
     return P, R, F
 

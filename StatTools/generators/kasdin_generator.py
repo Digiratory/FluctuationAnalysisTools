@@ -39,7 +39,7 @@ class KasdinGenerator:
         if length is not None and length < 1:
             raise ValueError("Length must be more than 1")
         self.validate_h(h)
-        self.h = h
+        self._h = h
         self.length = length
         self.random_generator = random_generator
         self.filter_coefficients_length = filter_coefficients_length
@@ -61,7 +61,7 @@ class KasdinGenerator:
         self.current_index = 0
 
     def get_beta(self):
-        return 2 * self.h - 1
+        return 2 * self._h - 1
 
     def validate_h(self, h):
         if not 0.5 <= h <= 1.5:
@@ -97,6 +97,9 @@ class KasdinGenerator:
         """Return full generated sequence."""
         return self.sequence
 
+    def get_h(self):
+        return self._h
+
 
 class ERKasdinGenerator(KasdinGenerator):
     """Extended range version of Kasdin generator, which can be used for H < 0.5 and H > 1.5"""
@@ -109,10 +112,28 @@ class ERKasdinGenerator(KasdinGenerator):
         normalize=True,
         filter_coefficients_length=None,
     ) -> None:
-        self.effective_h = h
+        self._effective_h = h
         self.steps_count = 0
+        # First determine how many integration/differentiation steps are needed
+        if h > 1.5:
+            while self._effective_h > 1.5:
+                self.steps_count -= 1
+                self._effective_h -= 1
+        elif h < 0.5:
+            while self._effective_h < 0.5:
+                self.steps_count += 1
+                self._effective_h += 1
+
+        # Calculate the required internal length to account for integration/differentiation operations
+        # np.diff() reduces length by 1, np.cumsum() increases length by 1
+        # We need to generate a longer sequence to compensate for np.diff operations
+        internal_length = length + abs(self.steps_count)
         super().__init__(
-            h, length, random_generator, normalize, filter_coefficients_length
+            self._effective_h,
+            internal_length,
+            random_generator,
+            normalize,
+            filter_coefficients_length,
         )
 
         if self.steps_count > 0:
@@ -123,24 +144,16 @@ class ERKasdinGenerator(KasdinGenerator):
             for _ in range(abs(self.steps_count)):
                 self.sequence = np.cumsum(self.sequence)
 
-    def validate_h(self, h):
-        if not 0.5 <= h <= 1.5:
-            warnings.warn(
-                "H is not in range (0.5, 1.5). Using integration/differentiation."
-            )
+        # Ensure the final sequence has the requested length
+        if len(self.sequence) > length:
+            self.sequence = self.sequence[:length]
 
     def get_beta(self):
-        if self.h > 1.5:
-            while self.effective_h > 1.5:
-                self.steps_count -= 1
-                self.effective_h -= 1
-        elif self.h < 0.5:
-            while self.effective_h < 0.5:
-                self.steps_count += 1
-                self.effective_h += 1
-
-        beta = 2 * self.effective_h - 1
+        beta = 2 * self._effective_h - 1
         return beta
+
+    def get_h(self):
+        return self._effective_h
 
 
 def create_kasdin_generator(

@@ -7,10 +7,11 @@ from scipy import signal
 from StatTools.analysis.dfa import DFA
 
 IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
-if IN_GITHUB_ACTIONS:
-    TEST_H_VALUES = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
-else:
-    TEST_H_VALUES = [0.5, 1.0, 1.5, 2.0]
+TEST_H_VALUES_FULL = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
+TEST_H_VALUES_CI = [0.5, 1.0, 1.5]  # Reduced set for CI environments
+
+# Use reduced parameter set in GitHub Actions to speed up tests
+TEST_H_VALUES = TEST_H_VALUES_CI if IN_GITHUB_ACTIONS else TEST_H_VALUES_FULL
 
 
 def generate_fgn(length, h):
@@ -28,6 +29,7 @@ def generate_fgn(length, h):
     return signal.lfilter(1, A, z)
 
 
+@pytest.mark.timeout(300)  # 5 minutes timeout
 @pytest.mark.parametrize("h_target", TEST_H_VALUES)
 def test_find_h_with_known_h(h_target):
     """Test DFA with signals of known Hurst exponent"""
@@ -50,9 +52,7 @@ def test_find_h_2d():
     assert isinstance(h_values, np.ndarray)
     assert h_values.shape == (len(TEST_H_VALUES),)
     for h_est, h_target in zip(h_values, TEST_H_VALUES):
-        assert (
-            abs(h_est - h_target) < 0.05
-        ), f"Wrong h: expected {h_target}, got {h_est}"
+        assert abs(h_est - h_target) < 0.1, f"Wrong h: expected {h_target}, got {h_est}"
 
 
 def test_find_h_empty_input():

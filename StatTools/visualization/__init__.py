@@ -1,1 +1,1 @@
-from .ff_plot import plot_ff
+from .plot_ff import plot_ff
