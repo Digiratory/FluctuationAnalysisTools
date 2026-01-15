@@ -124,93 +124,125 @@ def tdc_dpcca_worker(
     pd: int,
     time_delays: Union[int, Iterable] = None,
     max_time_delay: int = None,
-    flag_use_lags: bool = False,  # флаг есть ли временные задержки
+    flag_use_lags: bool = False,  # flag if there are time delays
     gc_params: tuple = None,
     n_integral: int = 1,
-) -> tuple[tuple, None]:
+) -> Union[tuple, None]:
+    """
+    Core of DPCAA algorithm with time lags. Takes bunch of S-values and returns 3 4d-matrices: first index
+    represents length of time lags array.
+    """
 
     if not flag_use_lags:
         return dpcca_worker(s, arr, step, pd, gc_params, n_integral=n_integral)
 
-    s_current = [s] if isinstance(s, int) else list(s)
+    s_list = [s] if isinstance(s, int) else list(s)
 
     if time_delays is not None:
         time_delay_list = np.array(time_delays, dtype=int)
     elif max_time_delay is not None:
-        time_delay_list = np.arange(-max_time_delay - 1, max_time_delay, dtype=int)
+        time_delay_list = np.arange(0, max_time_delay + 1, dtype=int)
     else:
-        raise ValueError("должны быть лаги")
+        raise ValueError("use lags")
 
-    n_lags = len(time_delay_list)
-    N = arr.shape[0]
+    n_lags = len(time_delay_list)  # length of input time lags array
+    n_signals, n = arr.shape
 
     cumsum_arr = arr
     for _ in range(n_integral):
-        cumsum_arr = np.cumsum(cumsum_arr, axis=1)  # интегральная сумма
-    F = np.zeros((n_lags, len(s_current), N, N), dtype=np.float64)  # ковариация
-    R = np.zeros(
-        (n_lags, len(s_current), N, N), dtype=np.float64
-    )  # уровни кросс корреляции
-    P = np.zeros(
-        (n_lags, len(s_current), N, N), dtype=np.float64
-    )  # частичная кросс корреляция
+        cumsum_arr = np.cumsum(cumsum_arr, axis=1)  # integral sum
 
-    for s_i, s_val in enumerate(s_current):
+    f = np.zeros(
+        (n_lags, len(s_list), n_signals, n_signals), dtype=np.float64
+    )  # covariation
+    r = np.zeros(
+        (n_lags, len(s_list), n_signals, n_signals), dtype=np.float64
+    )  # levels of cross correlation
+    p = np.zeros(
+        (n_lags, len(s_list), n_signals, n_signals), dtype=np.float64
+    )  # partial cross correlation levels
+
+    for s_i, s_val in enumerate(s_list):
+
+        if s_val > n:
+            raise ValueError("time window couldnt be larger then input data array")
+
+        start = np.arange(
+            0, n - s_val + 1
+        )  # all indices of beginning of the windows in input data array
+        start_window = start[
+            :: int(step * s_val)
+        ]  # biginning of the all windows with step
+        n_windows = len(start_window)  # value of windows
+
         signal_view = np.lib.stride_tricks.sliding_window_view(
             cumsum_arr, window_shape=s_val, axis=1
-        )
-        signal_view = signal_view[:, :: int(step * s_val)]
-        n_windows = signal_view.shape[
-            1
-        ]  # идти по стобцам каждого окна(общее число скользящих окон)
-        Xw = np.arange(s_val, dtype=int)  # ранжирование временных масштабов
-        Y_detrended = np.zeros_like(signal_view, dtype=np.float64)
-        for n in range(cumsum_arr.shape[0]):  # массив по каждому сигналу
-            for w_i in range(n_windows):  # массив по каждому окну временному
-                W = signal_view[
-                    n, w_i
-                ]  # значение конкертного сигнала в конкретном временном окне
-                p = np.polyfit(Xw, W, deg=pd)  # нахождение фита для тренда
-                Z = np.polyval(p, Xw)  # фит для тренда
-                Y_detrended[n, w_i] = W - Z
+        )  # sliding window
+        signal_view = signal_view[
+            :, :: int(step * s_val), :
+        ]  # (signals,all windows, len of window)
 
-        for lag_i, tau in enumerate(time_delay_list):
-            if tau == 0:
-                Y1 = Y_detrended
-                Y2 = Y_detrended
-                current_windows = n_windows
-            elif tau > 0:
-                Y1 = Y_detrended[
-                    :, :-tau
-                ]  # сдвиг первого сигнала (остается прежним сигналом)
-                Y2 = Y_detrended[:, tau:]  # отделяется часть с начала равная сдвигу
-                current_windows = (
-                    n_windows - tau
-                )  # сдвиг для окна(выбор оставшихся окон)
-            else:
-                tau_minus = -tau
-                if tau_minus >= n_windows:
-                    continue  # проверка чтобы лаг был не больше колличества окон
-                Y1 = Y_detrended[:, tau_minus:]
-                Y2 = Y_detrended[:, :-tau_minus]
-                current_windows = n_windows - tau_minus
-            if current_windows <= 0:
-                continue  # проверка чтобы лаг был не больше колличества окон
-            Y1_flat = Y1.reshape(N, -1)  # представление в одномерном массиве
-            Y2_flat = Y2.reshape(N, -1)
-            # F = np.zeros((Y1_flat, Y2_flat), dtype=float)
-            # for i in Y1_flat:
-            #     for j in Y2_flat:
-            #         F[i][j] = np.mean(i*j)
-            #         covariation=F[i][j]
-            covariation = np.zeros((N, N), dtype=np.float64)
-            for i in range(N):
-                for j in range(N):
-                    covariation[i, j] = np.mean(Y1_flat[i] * Y2_flat[j])
-            F[lag_i, s_i] = covariation
-            R[lag_i, s_i] = _correlation(covariation)
-            P[lag_i, s_i] = _cross_correlation(R[lag_i, s_i])
-    return P, R, F
+        xw = np.arange(s_val, dtype=int)  # ranging time scales
+        y_detrended = np.zeros_like(signal_view, dtype=np.float64)
+        for signal in range(cumsum_arr.shape[0]):
+            for w_i in range(n_windows):  # array by all indices of all windows
+                W = signal_view[
+                    signal, w_i
+                ]  # value of current signal in current window
+                p_fit = np.polyfit(xw, W, deg=pd)
+                z_fit = np.polyval(p_fit, xw)
+                y_detrended[signal, w_i] = W - z_fit  # detrend
+        # We have global data and indices: data in all input array
+        # local data: data and indices in current window
+        # compare signal_1 and signal_2 with time delays bu indices: find correlation and etc of
+        # x[i] and y[i+tau] where tau is value of time lag. Also we have limits:
+        # index of current value (i)<=(lenght of input data array(n))-(tau):global_index_lag
+        # local length in window of array of analyxed points with lags: length of current window(s_val)-tau:local_max_len_lag
+        #
+        for lag_index, lag in enumerate(time_delay_list):
+            data_points = [[] for _ in range(n_signals)]
+            data_lag_points = [[] for _ in range(n_signals)]
+            for w in range(n_windows):
+                start_pos = start_window[w]  # value of start position of current window
+                global_index_lag = n - lag
+                if (
+                    start_pos > global_index_lag
+                ):  # start position cant be larger then global index lag
+                    continue
+                local_max_len_lag = s_val - lag
+                if local_max_len_lag <= 0:
+                    continue
+                true_points = (
+                    global_index_lag - start_pos
+                )  # global array of points to analyse
+                cross_points = min(
+                    true_points, local_max_len_lag
+                )  # find the value of pairs of points to analyse considering
+                # local and global constraints to avoid dimensional errors
+                if cross_points <= 0:
+                    continue
+                for sig in range(n_signals):
+                    data_true = y_detrended[
+                        sig, w, :cross_points
+                    ]  # detrended array with selected data
+                    data_lag_true = y_detrended[
+                        sig, w, lag : cross_points + lag
+                    ]  # detrended array with selected data with time lags
+                    data_points[sig].extend(data_true)
+                    data_lag_points[sig].extend(data_lag_true)
+
+            signal_1 = np.array(data_points, dtype=np.float64)
+            signal_2 = np.array(data_lag_points, dtype=np.float64)
+
+            covariation = _covariation(signal_1, signal_2)
+            correlation = _correlation(covariation)
+            cross_correlation = _cross_correlation(correlation)
+
+            f[lag_index, s_i] = covariation
+            r[lag_index, s_i] = correlation
+            p[lag_index, s_i] = cross_correlation
+
+    return p, r, f
 
 
 def concatenate_3d_matrices(p: np.ndarray, r: np.ndarray, f: np.ndarray):
