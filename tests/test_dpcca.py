@@ -39,6 +39,7 @@ def sample_signal():
     return signals
 
 
+@pytest.mark.timeout(300)  # 5 minutes timeout
 @pytest.mark.parametrize("h", testdata)
 def test_dpcca_default(sample_signal, h):
     s = [2**i for i in range(3, 20)]
@@ -56,6 +57,7 @@ def test_dpcca_default(sample_signal, h):
     assert res.slope == pytest.approx(h, 0.1)
 
 
+@pytest.mark.timeout(300)  # 5 minutes timeout
 @pytest.mark.parametrize("h", testdata)
 def test_dpcca_default_buffer(sample_signal, h):
     s = [2**i for i in range(3, 20)]
@@ -69,6 +71,7 @@ def test_dpcca_default_buffer(sample_signal, h):
     assert res.slope == pytest.approx(h, 0.1)
 
 
+@pytest.mark.timeout(300)  # 5 minutes timeout
 @pytest.mark.parametrize("h", testdata)
 def test_dpcca_cumsum_0_default(sample_signal, h):
     s = [2**i for i in range(3, 20)]
@@ -83,6 +86,7 @@ def test_dpcca_cumsum_0_default(sample_signal, h):
     assert res.slope == pytest.approx(h, 0.1)
 
 
+@pytest.mark.timeout(300)  # 5 minutes timeout
 @pytest.mark.parametrize("h", testdata)
 def test_dpcca_cumsum_0_buffer(sample_signal, h):
     s = [2**i for i in range(3, 20)]
@@ -99,6 +103,7 @@ def test_dpcca_cumsum_0_buffer(sample_signal, h):
     assert res.slope == pytest.approx(h, 0.1)
 
 
+@pytest.mark.timeout(300)  # 5 minutes timeout
 @pytest.mark.parametrize("h", testdata)
 def test_dpcca_cumsum_2_default(sample_signal, h):
     s = [2**i for i in range(3, 20)]
@@ -111,6 +116,7 @@ def test_dpcca_cumsum_2_default(sample_signal, h):
     assert res.slope == pytest.approx(h + 1, 0.1)
 
 
+@pytest.mark.timeout(300)  # 5 minutes timeout
 @pytest.mark.parametrize("h", testdata)
 def test_dpcca_cumsum_2_buffer(sample_signal, h):
     s = [2**i for i in range(3, 20)]
