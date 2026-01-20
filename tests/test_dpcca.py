@@ -169,7 +169,7 @@ def test_tdc_dpcca_lags(create_signal_pair, h, lag):
     pd = 1
     n_integral = 0
     true_lag = 6
-    lag_range = np.arange(true_lag - 5, true_lag)
+    lag_range = np.arange(true_lag - 5, true_lag + 1)
     p, r, f = tdc_dpcca_worker(
         s=s,
         arr=arr,

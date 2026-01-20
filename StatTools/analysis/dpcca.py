@@ -7,10 +7,12 @@ from multiprocessing import Pool
 from typing import Union
 
 import numpy as np
+from numba import njit
 
 from StatTools.auxiliary import SharedBuffer
 
 
+# @njit(cache=True)
 def _covariation(signal_1: np.ndarray, signal_2: np.ndarray = None):
     """
     Implementation equation (4) from [1]
@@ -27,6 +29,7 @@ def _covariation(signal_1: np.ndarray, signal_2: np.ndarray = None):
     return F
 
 
+# @njit(cache=True)
 def _correlation(F: np.ndarray):
     """
     Implementation equation (6) from [1]
@@ -40,6 +43,7 @@ def _correlation(F: np.ndarray):
     return R
 
 
+# @njit(cache=True)
 def _cross_correlation(R: np.ndarray):
     """
     Implementation equation (9) from [1]
@@ -58,6 +62,17 @@ def _cross_correlation(R: np.ndarray):
             continue
         break
     return P
+
+
+# @njit(cache=True)
+def _detrend(current_signal: np.ndarray, pd: int, w: int, sig: int):
+    current_signal_values = len(current_signal)
+    xw = np.arange(current_signal_values, dtype=int)
+    p_fit = np.polyfit(xw, current_signal, deg=pd)
+    z_fit = np.polyval(p_fit, xw)
+    y_detrended = np.zeros_like(current_signal, dtype=np.float64)
+    y_detrended[:] = current_signal - z_fit
+    return y_detrended
 
 
 # @profile()
@@ -182,16 +197,16 @@ def tdc_dpcca_worker(
             :, :: int(step * s_val), :
         ]  # (signals,all windows, len of window)
 
-        xw = np.arange(s_val, dtype=int)  # ranging time scales
-        y_detrended = np.zeros_like(signal_view, dtype=np.float64)
-        for signal in range(cumsum_arr.shape[0]):
-            for w_i in range(n_windows):  # array by all indices of all windows
-                W = signal_view[
-                    signal, w_i
-                ]  # value of current signal in current window
-                p_fit = np.polyfit(xw, W, deg=pd)
-                z_fit = np.polyval(p_fit, xw)
-                y_detrended[signal, w_i] = W - z_fit  # detrend
+        # xw = np.arange(s_val, dtype=int)  # ranging time scales
+        # y_detrended = np.zeros_like(signal_view, dtype=np.float64)
+        # for signal in range(cumsum_arr.shape[0]):
+        #     for w_i in range(n_windows):  # array by all start indices of all windows
+        #         W = signal_view[
+        #             signal, w_i
+        #         ]  # value of current signal in current window
+        #         p_fit = np.polyfit(xw, W, deg=pd)
+        #         z_fit = np.polyval(p_fit, xw)
+        #         y_detrended[signal, w_i] = W - z_fit  # detrend
         # We have global data and indices: data in all input array
         # local data: data and indices in current window
         # compare signal_1 and signal_2 with time delays bu indices: find correlation and etc of
@@ -200,8 +215,10 @@ def tdc_dpcca_worker(
         # local length in window of array of analyxed points with lags: length of current window(s_val)-tau:local_max_len_lag
         #
         for lag_index, lag in enumerate(time_delay_list):
-            data_points = [[] for _ in range(n_signals)]
-            data_lag_points = [[] for _ in range(n_signals)]
+            # data_points = [[] for _ in range(n_signals)]
+            # data_lag_points = [[] for _ in range(n_signals)]
+            # data_points=np.zeros_like(signal_view, dtype=np.float64)
+            # data_lag_points=np.zeros_like(signal_view, dtype=np.float64)
             for w in range(n_windows):
                 start_pos = start_window[w]  # value of start position of current window
                 global_index_lag = n - lag
@@ -221,22 +238,35 @@ def tdc_dpcca_worker(
                 # local and global constraints to avoid dimensional errors
                 if cross_points <= 0:
                     continue
+                signal_windows = np.zeros((n_signals, cross_points), dtype=float)
+                signal_lag_windows = np.zeros((n_signals, cross_points), dtype=float)
                 for sig in range(n_signals):
-                    data_true = y_detrended[
+
+                    data_true = signal_view[
                         sig, w, :cross_points
                     ]  # detrended array with selected data
-                    data_lag_true = y_detrended[
+                    data_lag_true = signal_view[
                         sig, w, lag : cross_points + lag
                     ]  # detrended array with selected data with time lags
-                    data_points[sig].extend(data_true)
-                    data_lag_points[sig].extend(data_lag_true)
+                    # data_points[sig].extend(data_true)
+                    # data_lag_points[sig].extend(data_lag_true)
+                    signal_windows[sig] = _detrend(data_true, pd, w, sig)
+                    signal_lag_windows[sig] = _detrend(data_lag_true, pd, w, sig)
+                    # data_true_detrended=_detrend(data_true, pd, w, sig)
+                    # data_lag_true_detrended=_detrend(data_lag_true, pd, w, sig)
+                covariation = _covariation(signal_windows, signal_lag_windows)
+                correlation = _correlation(covariation)
+                cross_correlation = _cross_correlation(correlation)
+            # covariation = _covariation(data_true_detrended, data_lag_true_detrended)
+            # correlation = _correlation(covariation)
+            # cross_correlation = _cross_correlation(correlation)
 
-            signal_1 = np.array(data_points, dtype=np.float64)
-            signal_2 = np.array(data_lag_points, dtype=np.float64)
+            # signal_1 = np.array(data_points, dtype=np.float64)
+            # signal_2 = np.array(data_lag_points, dtype=np.float64)
 
-            covariation = _covariation(signal_1, signal_2)
-            correlation = _correlation(covariation)
-            cross_correlation = _cross_correlation(correlation)
+            # covariation = _covariation(signal_1, signal_2)
+            # correlation = _correlation(covariation)
+            # cross_correlation = _cross_correlation(correlation)
 
             f[lag_index, s_i] = covariation
             r[lag_index, s_i] = correlation
