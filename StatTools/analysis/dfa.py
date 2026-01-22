@@ -1,3 +1,20 @@
+import numpy as np
+
+try:
+    import cupy as cp
+
+    _GPU_AVAILABLE = True
+except ImportError:
+    cp = None
+    _GPU_AVAILABLE = False
+    import warnings
+
+    warnings.warn(
+        "CuPy not available, GPU acceleration disabled. "
+        "Install with: pip install cupy-cuda11x (or cupy-cuda12x)",
+        UserWarning,
+    )
+
 import time
 import warnings
 from contextlib import closing
@@ -8,25 +25,26 @@ from multiprocessing import Array, Lock, Pool, Value, cpu_count
 from threading import Thread
 from typing import Tuple, Union
 
-import numpy as np
 from tqdm import TqdmWarning, tqdm
 
 # ====================== DFA core worker ======================
 
 
 def _detrend_segment(
-    y_segment: np.ndarray, indices: np.ndarray, degree: int
+    y_segment: np.ndarray,
+    indices: np.ndarray,
+    degree: int,
 ) -> np.ndarray:
     """
     Compute detrended residuals for a single segment.
 
     Args:
-        y_segment: Integrated time series segment.
-        indices: Indices for polynomial fitting.
+        y_segment: Integrated time series segment (numpy.ndarray).
+        indices: Indices for polynomial fitting (numpy.ndarray).
         degree: Polynomial degree for detrending.
 
     Returns:
-        Residuals (detrended segment).
+        Residuals (detrended segment) as numpy.ndarray.
     """
     coef = np.polyfit(indices, y_segment, deg=degree)
     trend = np.polyval(coef, indices)
@@ -40,6 +58,7 @@ def dfa_worker(
     degree: int = 2,
     s_values: Union[list, np.ndarray, None] = None,
     n_integral: int = 1,
+    use_gpu: bool = False,
 ) -> list:
     """
     Core of the DFA algorithm. Processes a subset of series (indices) and
@@ -51,10 +70,12 @@ def dfa_worker(
         degree: Polynomial degree for detrending.
         s_values: Pre-calculated box sizes (scales).
         n_integral: Number of cumulative sum operations to apply (default: 1).
+        use_gpu: If True, use GPU acceleration (requires CuPy 13.6+).
 
     Returns:
         list of (s, F2_s) for each requested index, where F2_s is F^2(s).
     """
+
     data = np.asarray(arr, dtype=float)
 
     if data.ndim != 2:
@@ -63,64 +84,158 @@ def dfa_worker(
             f"Normalize data to 2D before calling (use reshape(1, -1) for 1D)."
         )
 
-    if not isinstance(indices, (list, np.ndarray)):
-        indices = [indices]
+    if isinstance(indices, np.ndarray):
+        indices = indices.tolist()
+    elif not isinstance(indices, list):
+        indices = [int(indices)]
+    else:
+        indices = [int(idx) for idx in indices]
+
+    n_series = data.shape[0]
+    for idx in indices:
+        if not (0 <= idx < n_series):
+            raise IndexError(
+                f"Index {idx} out of bounds for array with {n_series} series"
+            )
 
     series_len_global = data.shape[1]
+
     if s_values is None:
         s_max = int(series_len_global / 4)
-        s_values = [int(exp(step)) for step in np.arange(1.6, np.log(s_max), 0.5)]
+        if s_max <= 0:
+            s_values = []
+        else:
+            steps = np.arange(1.6, np.log(s_max), 0.5)
+            s_values = [int(exp(step)) for step in steps]
     else:
-        s_values = list(s_values)
+        if isinstance(s_values, np.ndarray):
+            s_values = s_values.tolist()
+        elif isinstance(s_values, list):
+            s_values = [int(s) for s in s_values]
+        else:
+            s_values = [int(s_values)]
 
     results = []
 
-    for idx in indices:
-        series = data[idx]
+    if use_gpu and _GPU_AVAILABLE:
+        batch_data = cp.asarray(data[indices], dtype=cp.float64)
+        n_series_batch = batch_data.shape[0]
+        series_len = batch_data.shape[1]
 
-        # Standard DFA preprocessing: mean-centering and integration
-        data_centered = series - np.mean(series)
-        y_cumsum = data_centered
+        # Center data and apply cumulative sum n_integral times
+        y_batch = batch_data - cp.mean(batch_data, axis=1, keepdims=True)
         for _ in range(n_integral):
-            y_cumsum = np.cumsum(y_cumsum)
-        series_len = len(data_centered)
+            y_batch = cp.cumsum(y_batch, axis=1)
 
-        s_list = []
-        f2_list = []
+        s_list_all = []
+        f2_list_all = []
 
         for s_val in s_values:
             if s_val >= series_len / 4:
                 continue
 
-            s = np.arange(1, s_val + 1, dtype=int)
-            len_s = len(s)
+            s = cp.arange(1, s_val + 1, dtype=cp.int32)
+            len_s = int(len(s))
             cycles_amount = floor(series_len / len_s)
+
             if cycles_amount < 1:
                 continue
 
-            f2_sum = 0.0
-            s_temp = s.copy()
+            n_segments = cycles_amount - 1
 
-            for i in range(1, cycles_amount):
-                indices_s = (s_temp - (i + 0.5) * len_s).astype(int)
-                y_cumsum_s = y_cumsum[s_temp]
+            if n_segments == 0:
+                continue
 
-                # Compute detrended residuals for this segment
-                residuals = _detrend_segment(y_cumsum_s, indices_s, degree)
+            required_len = n_segments * s_val
+            cutoff = 1 + required_len
+            y_sliced = y_batch[:, 1:cutoff]
 
-                # Mean squared residual in the window
-                f2 = np.sum(residuals**2) / len_s
+            # Reshape into segments: (n_series_batch, n_segments, s_val)
+            segments_3d = y_sliced.reshape(n_series_batch, n_segments, s_val)
 
-                # Accumulate mean squared residuals to get F^2(s)
-                f2_sum += f2
-                s_temp += s_val
+            # Flatten for batch polyfit: (s_val, n_series_batch * n_segments)
+            flat_segments = segments_3d.reshape(-1, s_val).T
 
-            # Fluctuation function F^2(s)
-            f2_s = f2_sum / cycles_amount
-            s_list.append(s_val)
-            f2_list.append(f2_s)
+            # Create centered coordinates for polynomial fitting (1-based indexing)
+            x = cp.arange(1, s_val + 1, dtype=cp.float64)
+            x_centered = (x - 0.5 * len_s).astype(cp.float64)
 
-        results.append((np.array(s_list), np.array(f2_list)))
+            # Batch polynomial fitting: coeffs shape (degree + 1, n_segments_total)
+            coeffs = cp.polyfit(x_centered, flat_segments, deg=degree)
+
+            # Evaluate polynomial using Horner's method (numerically stable, equivalent to np.polyval)
+            trends_flat = cp.full((coeffs.shape[1], s_val), coeffs[0][:, cp.newaxis])
+            for i in range(1, degree + 1):
+                trends_flat = trends_flat * x_centered + coeffs[i][:, cp.newaxis]
+
+            # Reshape back to 3D: (n_series_batch, n_segments, s_val)
+            trends_3d = trends_flat.reshape(n_series_batch, n_segments, s_val)
+
+            # Compute F^2(s): mean squared residuals across all segments
+            # axis=2: mean within segment, axis=1: mean across segments per series
+            f2_batch = cp.mean(cp.mean((segments_3d - trends_3d) ** 2, axis=2), axis=1)
+
+            s_list_all.append(s_val)
+            f2_list_all.append(f2_batch.get())
+
+        for series_idx in range(n_series_batch):
+            s_array = np.array(s_list_all)
+            f2_array = np.array(
+                [f2_list_all[i][series_idx] for i in range(len(f2_list_all))]
+            )
+            results.append((s_array, f2_array))
+
+    else:
+        for idx in indices:
+            series = data[idx]
+
+            if series.ndim > 1:
+                series = series.flatten()
+
+            # Center data and apply cumulative sum n_integral times
+            data_centered = series - np.mean(series)
+            y_cumsum = data_centered
+            for _ in range(n_integral):
+                y_cumsum = np.cumsum(y_cumsum)
+
+            series_len = int(len(data_centered))
+
+            s_list = []
+            f2_list = []
+
+            for s_val in s_values:
+                if s_val >= series_len / 4:
+                    continue
+
+                s = np.arange(1, s_val + 1, dtype=int)
+                len_s = int(len(s))
+                cycles_amount = floor(series_len / len_s)
+
+                if cycles_amount < 1:
+                    continue
+
+                f2_sum = 0.0
+                s_temp = s.copy()
+
+                # Process segments starting from index 1 (skip first segment, matching GPU logic)
+                for i in range(1, cycles_amount):
+                    # Center indices for polynomial fitting: subtract (i + 0.5) * len_s
+                    indices_s = (s_temp - (i + 0.5) * len_s).astype(int)
+                    y_cumsum_s = y_cumsum[s_temp]
+
+                    residuals = _detrend_segment(y_cumsum_s, indices_s, degree)
+                    f2 = float(np.sum(residuals**2) / len_s)
+
+                    f2_sum += f2
+                    s_temp += s_val  # Move to next segment
+
+                f2_s = f2_sum / (cycles_amount - 1)
+                s_list.append(s_val)
+                f2_list.append(f2_s)
+
+            s_array = np.array(s_list)
+            f2_array = np.array(f2_list)
+            results.append((s_array, f2_array))
 
     return results
 
@@ -133,6 +248,7 @@ def dfa(
     degree: int = 2,
     processes: int = 1,
     n_integral: int = 1,
+    use_gpu: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Implementation of the Detrended Fluctuation Analysis (DFA) method.
@@ -144,7 +260,10 @@ def dfa(
         dataset (ndarray): 1D or 2D array of time series data.
         degree (int): Polynomial degree for detrending (default: 2).
         processes (int): Number of parallel workers (default: 1).
+            Note: If use_gpu=True, multiprocessing is disabled and GPU is used instead.
         n_integral (int): Number of cumulative sum operations to apply (default: 1).
+        use_gpu (bool): If True, use GPU acceleration (requires CuPy 13.6+).
+            GPU mode uses single process (multiprocessing disabled).
 
     Returns:
         tuple: (s, F2_s)
@@ -170,7 +289,13 @@ def dfa(
     n_series = data.shape[0]
     results = None
 
-    if processes <= 1:
+    if use_gpu and _GPU_AVAILABLE:
+        if processes > 1:
+            warnings.warn(
+                f"GPU acceleration enabled: multiprocessing (processes={processes}) "
+                f"is disabled. Using single GPU process instead.",
+                UserWarning,
+            )
         indices = np.arange(n_series)
         results = dfa_worker(
             indices=indices,
@@ -178,6 +303,17 @@ def dfa(
             degree=degree,
             s_values=s_values,
             n_integral=n_integral,
+            use_gpu=True,
+        )
+    elif processes <= 1:
+        indices = np.arange(n_series)
+        results = dfa_worker(
+            indices=indices,
+            arr=data,
+            degree=degree,
+            s_values=s_values,
+            n_integral=n_integral,
+            use_gpu=False,
         )
     else:
         processes = min(processes, cpu_count(), n_series)
@@ -189,6 +325,7 @@ def dfa(
             degree=degree,
             s_values=s_values,
             n_integral=n_integral,
+            use_gpu=False,
         )
 
         results_list_of_lists = []
@@ -421,6 +558,7 @@ class DFA:
         dataset: Union[np.ndarray, list],
         degree: int,
         root: bool,
+        use_gpu: bool = False,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Perform DFA for a single vector and return (log(s), log(F(s))).
@@ -433,6 +571,8 @@ class DFA:
             dataset: Input time series data (1D or 2D).
             degree: Polynomial degree for detrending.
             root: Kept for backward compatibility, not used in current implementation.
+            use_gpu: If True, use GPU acceleration (requires CuPy 13.6+).
+                    Default is False.
         """
         data = np.asarray(dataset, dtype=float)
         if data.ndim == 1:
@@ -444,6 +584,7 @@ class DFA:
             degree=degree,
             s_values=None,
             n_integral=1,
+            use_gpu=use_gpu,
         )
         scales, fluct2_values = result_list[0]
 
@@ -454,7 +595,9 @@ class DFA:
 
         return log_s, log_f
 
-    def find_h(self, simple_mode: bool = True) -> Union[float, np.ndarray]:
+    def find_h(
+        self, simple_mode: bool = True, use_gpu: bool = False
+    ) -> Union[float, np.ndarray]:
         """
         Estimate the Hurst exponent from fluctuation analysis.
 
@@ -465,6 +608,8 @@ class DFA:
         Args:
             simple_mode: Kept for backward compatibility, not used
                         (always uses linear fit).
+            use_gpu: If True, use GPU acceleration (requires CuPy 13.6+).
+                    Default is False.
         """
         if not simple_mode:
             error_str = "\n    Non-linear approximation is not supported yet!"
@@ -478,6 +623,7 @@ class DFA:
             self.degree,
             processes=1,
             n_integral=1,
+            use_gpu=use_gpu,
         )
         self.s, self.F_s = scales, fluct2_values
 
