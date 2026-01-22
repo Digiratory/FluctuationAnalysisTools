@@ -131,8 +131,8 @@ def test_dpcca_cumsum_2_buffer(sample_signal, h):
     assert res.slope == pytest.approx(h + 1, 0.1)
 
 
-hurst_values = [0.5, 0.75, 1.0]
-test_lags = [0, 2, 3]
+hurst_values = [1.0, 1.25, 1.5]
+test_lags = [0, 1, 2, 3]
 
 
 @pytest.fixture(scope="module")
@@ -176,7 +176,6 @@ def test_tdc_dpcca_lags(create_signal_pair, h, lag):
         step=step,
         pd=pd,
         time_delays=lag_range,
-        flag_use_lags=True,
         n_integral=n_integral,
     )
     for s_idx in range(len(s)):

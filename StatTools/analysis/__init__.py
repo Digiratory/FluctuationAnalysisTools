@@ -1,4 +1,4 @@
-from .dpcca import dpcca
+from .dpcca import dpcca, tdc_dpcca_worker
 from .fa import fa
 from .nd_dfa import nd_dfa
 from .support_ff import (
