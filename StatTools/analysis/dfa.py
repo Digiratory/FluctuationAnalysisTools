@@ -122,21 +122,18 @@ def dfa_worker(
         n_series_batch = batch_data.shape[0]
         series_len = batch_data.shape[1]
 
-        # Center data and apply cumulative sum n_integral times
         y_batch = batch_data - cp.mean(batch_data, axis=1, keepdims=True)
         for _ in range(n_integral):
             y_batch = cp.cumsum(y_batch, axis=1)
 
         s_list_all = []
-        f2_list_all = []
+        f2_gpu_list = []  # Store GPU arrays
 
         for s_val in s_values:
             if s_val >= series_len / 4:
                 continue
 
-            s = cp.arange(1, s_val + 1, dtype=cp.int32)
-            len_s = int(len(s))
-            cycles_amount = floor(series_len / len_s)
+            cycles_amount = floor(series_len / s_val)
 
             if cycles_amount < 1:
                 continue
@@ -146,43 +143,41 @@ def dfa_worker(
             if n_segments == 0:
                 continue
 
-            required_len = n_segments * s_val
-            cutoff = 1 + required_len
+            cutoff = 1 + n_segments * s_val
             y_sliced = y_batch[:, 1:cutoff]
 
-            # Reshape into segments: (n_series_batch, n_segments, s_val)
-            segments_3d = y_sliced.reshape(n_series_batch, n_segments, s_val)
+            # Reshape into flat segments
+            flat_segments = y_sliced.reshape(n_series_batch * n_segments, s_val)
 
-            # Flatten for batch polyfit: (s_val, n_series_batch * n_segments)
-            flat_segments = segments_3d.reshape(-1, s_val).T
-
-            # Create centered coordinates for polynomial fitting (1-based indexing)
             x = cp.arange(1, s_val + 1, dtype=cp.float64)
-            x_centered = (x - 0.5 * len_s).astype(cp.float64)
+            x_centered = x - 0.5 * s_val
 
-            # Batch polynomial fitting: coeffs shape (degree + 1, n_segments_total)
-            coeffs = cp.polyfit(x_centered, flat_segments, deg=degree)
+            # Polynomial fitting using normal equations
+            V = cp.vander(x_centered, degree + 1, increasing=False)
+            VTV_inv = cp.linalg.inv(V.T @ V)
+            proj_matrix = V @ VTV_inv
 
-            # Evaluate polynomial using Horner's method (numerically stable, equivalent to np.polyval)
-            trends_flat = cp.full((coeffs.shape[1], s_val), coeffs[0][:, cp.newaxis])
-            for i in range(1, degree + 1):
-                trends_flat = trends_flat * x_centered + coeffs[i][:, cp.newaxis]
+            # Compute coefficients for all segments at once
+            coeffs = flat_segments @ proj_matrix
 
-            # Reshape back to 3D: (n_series_batch, n_segments, s_val)
-            trends_3d = trends_flat.reshape(n_series_batch, n_segments, s_val)
+            trends = coeffs @ V.T
 
-            # Compute F^2(s): mean squared residuals across all segments
-            # axis=2: mean within segment, axis=1: mean across segments per series
-            f2_batch = cp.mean(cp.mean((segments_3d - trends_3d) ** 2, axis=2), axis=1)
+            # Compute F^2(s): mean squared residuals per segment, then mean across segments per series
+            f2_per_seg = cp.mean((flat_segments - trends) ** 2, axis=1)
+            f2_batch = cp.mean(f2_per_seg.reshape(n_series_batch, n_segments), axis=1)
 
             s_list_all.append(s_val)
-            f2_list_all.append(f2_batch.get())
+            f2_gpu_list.append(f2_batch)
+
+        # Transfer all results from GPU to CPU
+        if not f2_gpu_list:
+            return [(np.array([]), np.array([])) for _ in range(n_series_batch)]
+
+        all_f2_cpu = cp.stack(f2_gpu_list).get()
 
         for series_idx in range(n_series_batch):
             s_array = np.array(s_list_all)
-            f2_array = np.array(
-                [f2_list_all[i][series_idx] for i in range(len(f2_list_all))]
-            )
+            f2_array = all_f2_cpu[:, series_idx]
             results.append((s_array, f2_array))
 
     else:
@@ -192,13 +187,12 @@ def dfa_worker(
             if series.ndim > 1:
                 series = series.flatten()
 
-            # Center data and apply cumulative sum n_integral times
             data_centered = series - np.mean(series)
             y_cumsum = data_centered
             for _ in range(n_integral):
                 y_cumsum = np.cumsum(y_cumsum)
 
-            series_len = int(len(data_centered))
+            series_len = len(data_centered)
 
             s_list = []
             f2_list = []
@@ -208,8 +202,7 @@ def dfa_worker(
                     continue
 
                 s = np.arange(1, s_val + 1, dtype=int)
-                len_s = int(len(s))
-                cycles_amount = floor(series_len / len_s)
+                cycles_amount = floor(series_len / s_val)
 
                 if cycles_amount < 1:
                     continue
@@ -217,17 +210,16 @@ def dfa_worker(
                 f2_sum = 0.0
                 s_temp = s.copy()
 
-                # Process segments starting from index 1 (skip first segment, matching GPU logic)
                 for i in range(1, cycles_amount):
-                    # Center indices for polynomial fitting: subtract (i + 0.5) * len_s
-                    indices_s = (s_temp - (i + 0.5) * len_s).astype(int)
+                    # Center indices for polynomial fitting: subtract (i + 0.5) * s_val
+                    indices_s = (s_temp - (i + 0.5) * s_val).astype(int)
                     y_cumsum_s = y_cumsum[s_temp]
 
                     residuals = _detrend_segment(y_cumsum_s, indices_s, degree)
-                    f2 = float(np.sum(residuals**2) / len_s)
+                    f2 = np.sum(residuals**2) / s_val
 
                     f2_sum += f2
-                    s_temp += s_val  # Move to next segment
+                    s_temp += s_val
 
                 f2_s = f2_sum / (cycles_amount - 1)
                 s_list.append(s_val)
@@ -283,11 +275,11 @@ def dfa(
         raise ValueError("Only 1D or 2D arrays are allowed!")
 
     series_len = data.shape[1]
-    s_max = int(series_len / 4)
-    s_values = [int(exp(step)) for step in np.arange(1.6, np.log(s_max), 0.5)]
+    s_values = [
+        int(exp(step)) for step in np.arange(1.6, np.log(int(series_len / 4)), 0.5)
+    ]
 
     n_series = data.shape[0]
-    results = None
 
     if use_gpu and _GPU_AVAILABLE:
         if processes > 1:
@@ -631,26 +623,22 @@ class DFA:
 
         if self.dataset.ndim == 1:
             log_f = np.log(np.sqrt(self.F_s))
-            slope = self._hurst_exponent(log_s, log_f, simple_mode=True)
-            h_value = slope
+            return self._hurst_exponent(log_s, log_f, simple_mode=True)
         else:
             n_series = self.dataset.shape[0]
             h_array = np.empty(n_series, dtype=float)
             for i in range(n_series):
                 log_f = np.log(np.sqrt(self.F_s[i]))
-                slope = self._hurst_exponent(log_s, log_f, simple_mode=True)
-                h_array[i] = slope
-            h_value = h_array
-
-        return h_value
+                h_array[i] = self._hurst_exponent(log_s, log_f, simple_mode=True)
+            return h_array
 
     def parallel_2d(
         self,
         threads: int = cpu_count(),
         progress_bar: bool = False,
         h_control: bool = False,
-        h_target: float = float(),
-        h_limit: float = float(),
+        h_target: float = 0.0,
+        h_limit: float = 0.0,
     ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         """
         Parallel computation of Hurst exponents for 2D datasets.
@@ -770,7 +758,6 @@ class DFA:
         for i in indices:
             vector = all_data[i]
 
-            # Normalize to 2D format (single row)
             vector_2d = vector.reshape(1, -1)
 
             result_list = dfa_worker(
@@ -784,8 +771,7 @@ class DFA:
 
             log_s = np.log(scales)
             log_f = np.log(np.sqrt(fluct2_values))
-            slope = self._hurst_exponent(log_s, log_f, simple_mode=True)
-            h_calc = slope
+            h_calc = self._hurst_exponent(log_s, log_f, simple_mode=True)
 
             np.frombuffer(estimations.get_obj())[i] = h_calc
 

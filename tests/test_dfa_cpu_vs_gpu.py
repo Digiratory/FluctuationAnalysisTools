@@ -59,11 +59,12 @@ def test_dfa_cpu_vs_gpu_benchmark():
     _ = dfa(data, degree=2, processes=1, use_gpu=True)
 
     # CPU benchmark
+    n_cpu_cores = cpu_count()
     n_runs = 3
     cpu_times = []
     for _ in range(n_runs):
         start = time.perf_counter()
-        s_cpu, f2_cpu = dfa(data, degree=2, processes=cpu_count(), use_gpu=False)
+        s_cpu, f2_cpu = dfa(data, degree=2, processes=n_cpu_cores, use_gpu=False)
         cpu_times.append(time.perf_counter() - start)
 
     # GPU benchmark
@@ -80,6 +81,7 @@ def test_dfa_cpu_vs_gpu_benchmark():
     print(f"\n{'='*60}")
     print(f"DFA Performance Benchmark")
     print(f"{'='*60}")
+    print(f"CPU cores used: {n_cpu_cores}")
     print(f"Dataset: {n_series} time series, {length} points each")
     print(f"CPU average time: {avg_cpu_time:.4f} s (runs: {n_runs})")
     print(f"GPU average time: {avg_gpu_time:.4f} s (runs: {n_runs})")
@@ -113,8 +115,9 @@ def test_dfa_large_dataset_gpu_advantage():
     data = np.array(data_list)
 
     # Single run for large dataset
+    n_cpu_cores = cpu_count()
     start_cpu = time.perf_counter()
-    s_cpu, f2_cpu = dfa(data, degree=2, processes=cpu_count(), use_gpu=False)
+    s_cpu, f2_cpu = dfa(data, degree=2, processes=n_cpu_cores, use_gpu=False)
     cpu_time = time.perf_counter() - start_cpu
 
     start_gpu = time.perf_counter()
@@ -124,6 +127,7 @@ def test_dfa_large_dataset_gpu_advantage():
     speedup = cpu_time / gpu_time
 
     print(f"\nLarge dataset benchmark:")
+    print(f"  CPU cores used: {n_cpu_cores}")
     print(
         f"  Dataset: {n_series} series × {length} points = {n_series * length:,} total points"
     )
@@ -154,8 +158,9 @@ def test_dfa_very_large_dataset_gpu_advantage():
     data = np.array(data_list)
 
     # Single run for very large dataset
+    n_cpu_cores = cpu_count()
     start_cpu = time.perf_counter()
-    s_cpu, f2_cpu = dfa(data, degree=2, processes=cpu_count(), use_gpu=False)
+    s_cpu, f2_cpu = dfa(data, degree=2, processes=n_cpu_cores, use_gpu=False)
     cpu_time = time.perf_counter() - start_cpu
 
     start_gpu = time.perf_counter()
@@ -165,6 +170,7 @@ def test_dfa_very_large_dataset_gpu_advantage():
     speedup = cpu_time / gpu_time
 
     print(f"\nVery large dataset benchmark:")
+    print(f"  CPU cores used: {n_cpu_cores}")
     print(
         f"  Dataset: {n_series} series × {length} points = {n_series * length:,} total points"
     )
