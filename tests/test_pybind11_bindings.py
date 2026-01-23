@@ -191,8 +191,9 @@ class TestIntegration:
         if NEW_API_AVAILABLE:
             modules_available.append("StatTools.StatTools_bindings")
 
-        assert len(modules_available) > 0, "No binding modules available"
-        print(f"Available modules: {modules_available}")
+        assert len(modules_available) > 0, (
+            f"No binding modules available. Detected: {modules_available}"
+        )
 
     def test_data_type_consistency(self):
         """Test that data types are consistent across bindings"""
