@@ -11,7 +11,7 @@
 * [GH-50](https://github.com/Digiratory/FluctuationAnalysisTools/issues/50) refactor: Extract the core of dpcca in a separate method.
 * [PR-69](https://github.com/Digiratory/FluctuationAnalysisTools/pull/69) refactor: Refactor DFA implementation into modular functions, add function style interface for dfa.
 * [PR-65](https://github.com/Digiratory/FluctuationAnalysisTools/pull/65) feat: NEW Method SVD-DFA.
-* [PR-60](https://github.com/Digiratory/FluctuationAnalysisTools/pull/60)[PR-78](https://github.com/Digiratory/FluctuationAnalysisTools/pull/78)[PR-80](https://github.com/Digiratory/FluctuationAnalysisTools/pull/80)[PR-81](https://github.com/Digiratory/FluctuationAnalysisTools/pull/81)[PR-82](https://github.com/Digiratory/FluctuationAnalysisTools/pull/82)[PR-83](https://github.com/Digiratory/FluctuationAnalysisTools/pull/83)[PR-85](https://github.com/Digiratory/FluctuationAnalysisTools/pull/85): Mutliple minor fixes in CI/CD and code.
+* [PR-60](https://github.com/Digiratory/FluctuationAnalysisTools/pull/60)[PR-78](https://github.com/Digiratory/FluctuationAnalysisTools/pull/78)[PR-80](https://github.com/Digiratory/FluctuationAnalysisTools/pull/80)[PR-81](https://github.com/Digiratory/FluctuationAnalysisTools/pull/81)[PR-82](https://github.com/Digiratory/FluctuationAnalysisTools/pull/82)[PR-83](https://github.com/Digiratory/FluctuationAnalysisTools/pull/83)[PR-85](https://github.com/Digiratory/FluctuationAnalysisTools/pull/85): Multiple minor fixes in CI/CD and code.
 
 ## 1.9.0
 
