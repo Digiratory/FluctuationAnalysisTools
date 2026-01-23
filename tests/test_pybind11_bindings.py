@@ -11,6 +11,7 @@ This test module verifies that:
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
+import warnings
 
 # Import both old and new modules to test compatibility
 try:
@@ -19,7 +20,7 @@ try:
     OLD_API_AVAILABLE = True
 except ImportError:
     OLD_API_AVAILABLE = False
-    print("Warning: Original C API not available for comparison")
+    warnings.warn("Original C API not available for comparison")
 
 try:
     from StatTools import StatTools_bindings
@@ -27,7 +28,7 @@ try:
     NEW_API_AVAILABLE = True
 except ImportError:
     NEW_API_AVAILABLE = False
-    print("Warning: New pybind11 bindings not available")
+    warnings.warn("New pybind11 bindings not available")
 
 
 class TestPybind11Bindings:
