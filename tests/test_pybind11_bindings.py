@@ -8,6 +8,8 @@ This test module verifies that:
 
 """
 
+import warnings
+
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
@@ -19,7 +21,7 @@ try:
     OLD_API_AVAILABLE = True
 except ImportError:
     OLD_API_AVAILABLE = False
-    print("Warning: Original C API not available for comparison")
+    warnings.warn("Original C API not available for comparison")
 
 try:
     from StatTools import StatTools_bindings
@@ -27,7 +29,7 @@ try:
     NEW_API_AVAILABLE = True
 except ImportError:
     NEW_API_AVAILABLE = False
-    print("Warning: New pybind11 bindings not available")
+    warnings.warn("New pybind11 bindings not available")
 
 
 class TestPybind11Bindings:
@@ -191,8 +193,9 @@ class TestIntegration:
         if NEW_API_AVAILABLE:
             modules_available.append("StatTools.StatTools_bindings")
 
-        assert len(modules_available) > 0, "No binding modules available"
-        print(f"Available modules: {modules_available}")
+        assert (
+            len(modules_available) > 0
+        ), f"No binding modules available. Detected: {modules_available}"
 
     def test_data_type_consistency(self):
         """Test that data types are consistent across bindings"""
