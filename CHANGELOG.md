@@ -3,7 +3,7 @@
 ## 1.10.0
 
 * [GH-73](https://github.com/Digiratory/FluctuationAnalysisTools/issues/73) refactor: Restructure C++ codebase and add StatTools package with pybind11 bindings.
-* [GH-71](https://github.com/Digiratory/FluctuationAnalysisTools/issues/71) cicd: Add pre-commit validation proir tests.
+* [GH-71](https://github.com/Digiratory/FluctuationAnalysisTools/issues/71) cicd: Add pre-commit validation prior tests.
 * [GH-67](https://github.com/Digiratory/FluctuationAnalysisTools/issues/67) feat: NEW Method multidimantional DFA.
 * [GH-63](https://github.com/Digiratory/FluctuationAnalysisTools/issues/63)[PR-46](https://github.com/Digiratory/FluctuationAnalysisTools/pull/46) feat: fluctuation function analysis and visualization.
 * [GH-61](https://github.com/Digiratory/FluctuationAnalysisTools/issues/61) feat: Function-style fbn generator (common entry point).
