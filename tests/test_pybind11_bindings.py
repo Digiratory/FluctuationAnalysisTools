@@ -31,6 +31,9 @@ except ImportError:
     NEW_API_AVAILABLE = False
     warnings.warn("New pybind11 bindings not available")
 
+# Fix seed to make test stable
+np.random.seed(42)
+
 
 class TestPybind11Bindings:
     """Test pybind11 bindings for StatTools functions"""
@@ -66,7 +69,7 @@ class TestPybind11Bindings:
             pytest.skip("New API not available")
 
         # Generate 50 values and test statistical properties
-        values = [StatTools_bindings.get_gauss_dist_value() for _ in range(100)]
+        values = [StatTools_bindings.get_gauss_dist_value() for _ in range(500)]
 
         # All values should be floats
         assert all(isinstance(x, float) for x in values)
