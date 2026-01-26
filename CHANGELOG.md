@@ -4,7 +4,7 @@
 
 * [GH-73](https://github.com/Digiratory/FluctuationAnalysisTools/issues/73) refactor: Restructure C++ codebase and add StatTools package with pybind11 bindings.
 * [GH-71](https://github.com/Digiratory/FluctuationAnalysisTools/issues/71) cicd: Add pre-commit validation prior tests.
-* [GH-67](https://github.com/Digiratory/FluctuationAnalysisTools/issues/67) feat: NEW Method multidimantional DFA.
+* [GH-67](https://github.com/Digiratory/FluctuationAnalysisTools/issues/67) feat: NEW Method multidimensional DFA.
 * [GH-63](https://github.com/Digiratory/FluctuationAnalysisTools/issues/63)[PR-46](https://github.com/Digiratory/FluctuationAnalysisTools/pull/46) feat: fluctuation function analysis and visualization.
 * [GH-61](https://github.com/Digiratory/FluctuationAnalysisTools/issues/61) feat: Function-style fbn generator (common entry point).
 * [GH-58](https://github.com/Digiratory/FluctuationAnalysisTools/issues/58) feat: NEW Method to generate Power-law colored noise signals of any dimensions.
@@ -44,7 +44,7 @@
 
 ## 1.6.0
 
-* [GH-1](https://github.com/Digiratory/StatTools/issues/1) Add argument `n_integral=1` in `StatTools.analysis.dpcca.dpcca` to provide possibility to control integretion in the beggining of the dpcca(dfa) analysis pipeline.
+* [GH-1](https://github.com/Digiratory/StatTools/issues/1) Add argument `n_integral=1` in `StatTools.analysis.dpcca.dpcca` to provide possibility to control integration in the beginning of the dpcca(dfa) analysis pipeline.
 * fix: failure is processes == 1 and 1d array
 * fix: remove normalization from dpcca processing
 
