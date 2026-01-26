@@ -65,5 +65,5 @@ if __name__ == "__main__":
                 desc="Progress",
             )
         )
-        
+
     print(f"Done. {len(results)} files.")

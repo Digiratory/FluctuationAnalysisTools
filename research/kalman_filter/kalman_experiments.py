@@ -28,7 +28,7 @@ def process_snr_h_iter(args):
     """Обрабатывает одну итерацию с заданным H, s (порядок ФФ), SNR n_times и возвращает результаты"""
     h, s, r_list, trj_len, snr, n_times = args
     h_list = np.arange(0.5, 3.75, 0.25)
-    
+
     results_local = []
 
     for _ in range(n_times):
@@ -41,8 +41,16 @@ def process_snr_h_iter(args):
         noisy_signal, noise = add_noise(adjusted_signal, ratio=snr)
         for r in r_list:
             for model_h in h_list:
-                estimated_signal = apply_kalman_filter_cached(noisy_signal, model_h=model_h, r=r, noise=noise, cache_folder=kalman_cache_folder)
-                estimated_signal = reverse_hurst_adjustment(estimated_signal, applied_steps)
+                estimated_signal = apply_kalman_filter_cached(
+                    noisy_signal,
+                    model_h=model_h,
+                    r=r,
+                    noise=noise,
+                    cache_folder=kalman_cache_folder,
+                )
+                estimated_signal = reverse_hurst_adjustment(
+                    estimated_signal, applied_steps
+                )
                 se = np.nanstd(signal[0 : len(estimated_signal)] - estimated_signal)
                 h_est = get_extra_h_dfa(estimated_signal)
                 results_local.append(
@@ -55,7 +63,7 @@ def process_snr_h_iter(args):
                         "r": r,
                         "SNR": snr,
                         "SE": se,
-                        "H_kalman": model_h
+                        "H_kalman": model_h,
                     }
                 )
     return results_local
@@ -144,11 +152,11 @@ if __name__ == "__main__":
     print("Prepare args...")
     args_list = []
     H_LIST = np.arange(0.5, 3.75, 0.25)
-    R_LIST = [4] #np.array([2**i for i in range(1, 6)])
+    R_LIST = [4]  # np.array([2**i for i in range(1, 6)])
     TRJ_LEN = 2**14
     n_times = 5
     s = TRJ_LEN
-    SNR_LIST = [0.5] #[0.1, 0.5, 1, 2]
+    SNR_LIST = [0.5]  # [0.1, 0.5, 1, 2]
     metrics_df = pd.DataFrame(
         columns=[
             "H_target",
@@ -159,7 +167,7 @@ if __name__ == "__main__":
             "r",
             "SNR",
             "SE",
-            "H_kalman"
+            "H_kalman",
         ]
     )
     for snr in SNR_LIST:
