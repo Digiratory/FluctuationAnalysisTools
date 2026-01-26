@@ -67,7 +67,6 @@ def _bma_worker(
     # Using cumulative sums:
     #   sum_{k=t-n+1}^t y[k] = cs[t] - cs[t-n] (for t-n >= 0)
     # NOTE: here t >= n-1, so t-n >= -1; for t-n == -1, sum = cs[t].
-    window_sums = np.empty((n_signals, t_indices.size), dtype=float)
 
     t_indices = np.asarray(t_indices)
 
