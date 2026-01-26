@@ -74,7 +74,7 @@ def get_adaptive_filter_coefficients(
 
 class LBFBmGenerator:
     """
-    Generates a sequence of numbers based on the Hurst exponent.
+    (Experimental) Generates a sequence of numbers based on the Hurst exponent.
     The Hurst exponent is a measure of long-term memory of time series.
 
     Args:

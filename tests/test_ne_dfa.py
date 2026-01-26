@@ -10,14 +10,20 @@ from StatTools.analysis.dpcca import dpcca
 from StatTools.analysis.nonequidistant.dfa import dfa as ne_dfa
 
 TEST_H_VALUES = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
+TEST_H_VALUES_CI = [0.5, 1.0, 1.5]  # Reduced set for CI environments
 IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
+
+# Use reduced parameter set in GitHub Actions to speed up tests
+h_target_values = TEST_H_VALUES_CI if IN_GITHUB_ACTIONS else TEST_H_VALUES
 
 
 @pytest.fixture(scope="module")
 def sample_signal():
     length = 2**13
     signals = {}
-    for h in TEST_H_VALUES:
+    # Generate signals only for the H values that will be tested
+    test_h_values = h_target_values if IN_GITHUB_ACTIONS else TEST_H_VALUES
+    for h in test_h_values:
         z = np.random.normal(size=length * 2)
         beta = 2 * h - 1
         L = length * 2
@@ -35,7 +41,8 @@ def sample_signal():
     return signals
 
 
-@pytest.mark.parametrize("h_target", TEST_H_VALUES)
+@pytest.mark.timeout(300)  # 5 minutes timeout
+@pytest.mark.parametrize("h_target", h_target_values)
 def test_equidistant(sample_signal, h_target):
     """Test DFA with signals of known Hurst exponent"""
     np.random.seed(42)
@@ -54,8 +61,9 @@ def test_equidistant(sample_signal, h_target):
     assert res_ne_dfa.slope == pytest.approx(h_target, 0.1)
 
 
+@pytest.mark.timeout(300)  # 5 minutes timeout
 @pytest.mark.skipif(IN_GITHUB_ACTIONS, reason="Test too long for Github Actions.")
-@pytest.mark.parametrize("h_target", TEST_H_VALUES)
+@pytest.mark.parametrize("h_target", h_target_values)
 def test_nonequidistant_0_5(sample_signal, h_target):
     """Test DFA with signals of known Hurst exponent"""
     np.random.seed(42)
@@ -76,8 +84,9 @@ def test_nonequidistant_0_5(sample_signal, h_target):
     assert res_ne_dfa.slope == pytest.approx(h_target, 0.1)
 
 
+@pytest.mark.timeout(300)  # 5 minutes timeout
 @pytest.mark.skipif(IN_GITHUB_ACTIONS, reason="Test too long for Github Actions.")
-@pytest.mark.parametrize("h_target", TEST_H_VALUES)
+@pytest.mark.parametrize("h_target", h_target_values)
 def test_nonequidistant_0_25_parallel_all_samples(sample_signal, h_target):
     """Test DFA with signals of known Hurst exponent"""
     np.random.seed(42)

@@ -5,7 +5,6 @@ from functools import partial
 from multiprocessing import Array, Pool, Value, cpu_count
 from threading import Thread
 
-import C_StatTools
 from numpy import (
     arange,
     array,
@@ -19,6 +18,8 @@ from numpy import (
 )
 from numpy.random.mtrand import normal
 from tqdm import TqdmWarning, tqdm
+
+from StatTools import StatTools_bindings
 
 
 class QSS:
@@ -211,7 +212,7 @@ class QSS:
                 elif isinstance(C0, (ndarray, list, tuple)):
                     c = C0[i]
 
-            waiting_curve = C_StatTools.get_waiting_time(get_vector(i), U, c)
+            waiting_curve = StatTools_bindings.get_waiting_time(get_vector(i), U, c)
             write_result_to_mem(i, waiting_curve)
             if linear:
                 bar.update(1)

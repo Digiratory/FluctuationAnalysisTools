@@ -1,4 +1,4 @@
-# StatTools
+# FluctuationAnalysisTools
 
 [![GitHub Release](https://img.shields.io/github/v/release/Digiratory/StatTools?link=https%3A%2F%2Fpypi.org%2Fproject%2FFluctuationAnalysisTools%2F)](https://pypi.org/project/FluctuationAnalysisTools/)
 [![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/Digiratory/StatTools/run-tests.yml?label=tests)](https://github.com/Digiratory/StatTools/actions)
@@ -7,17 +7,43 @@
 
 A Python library for creating and processing long-term dependent datasets, with a focus on statistical analysis tools for fluctuation analysis, time series generation, and signal processing.
 
+## Table of Contents
+
+- [Features](#features)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Research and Examples](#research-and-examples)
+- [Contributing](#contributing)
+- [License](#license)
+- [Citation](#citation)
+
 ## Features
 
-- **Synthetic Data Generation**: Create datasets with controlled statistical properties (Hurst exponent, long-term dependencies)
-- **Fluctuation Analysis**: Perform Detrended Fluctuation Analysis (DFA), Detrended Partial Cross-Correlation Analysis (DPCCA), and other methods
-- **Signal Processing**: Apply filters and transformations to time series data
+- **Synthetic Data Generation**: Create datasets with controlled statistical properties (Hurst exponent, long-term dependencies) including:
+  - Kasdin method for fractional Brownian noise (Kasdin, N. J. (1995). Discrete simulation of colored noise and stochastic processes and 1/f/sup /spl alpha// power law noise generation.).
+  - FFT-based N-dimensional fractional Brownian motion (fBm) generator (Timmer, J., & Koenig, M. (1995). On generating power law noise).
+- **Fluctuation Analysis**: Perform various fluctuation analysis methods including:
+  - Detrended Fluctuation Analysis (DFA)
+  - Detrended Partial Cross-Correlation Analysis (DPCCA)
+  - Standard Fluctuation Analysis (FA)
+  - SVD-based DFA
+  - Multidimensional DFA
+  - Quantitative Signal Analysis (QSS)
 - **Research Tools**: Support scientific research in complex systems exhibiting long-range correlations
 - **Performance Optimized**: Multi-threaded implementations with C++ extensions for large datasets
 
+## Requirements
+
+- Python 3.8+
+- NumPy
+- SciPy
+- Matplotlib (for visualization)
+- C++ compiler (Mac and Windows packages contains precompiled binaries)
+
 ## Installation
 
-You can install StatTools from [PyPI](https://pypi.org/project/FluctuationAnalysisTools/):
+You can install FluctuationAnalysisTools from [PyPI](https://pypi.org/project/FluctuationAnalysisTools/):
 
 ```bash
 pip install FluctuationAnalysisTools
@@ -26,138 +52,66 @@ pip install FluctuationAnalysisTools
 Or clone the repository and install locally:
 
 ```bash
-git clone https://github.com/Digiratory/StatTools.git
+git clone https://github.com/Digiratory/FluctuationAnalysisTools.git
 cd StatTools
 pip install .
 ```
 
 ## Quick Start
 
-You can find examples and published usages in the folder [Research](./research/readme.md)
+You can find examples and published usages in the folder [Research](./research/)
 
 If you used the project in your paper, you are welcome to ask us to add reference via a Pull Request or an Issue.
-
 
 ### Generating Synthetic Data
 
 ```python
-from StatTools.generators.base_filter import FilteredArray
+from StatTools.generators import generate_fbn
 import numpy as np
 
-# Create a dataset with Hurst exponent H = 0.8
-h = 0.8
-total_vectors = 1000
-vectors_length = 1440
-threads = 8
+# Create a dataset with Hurst exponent H = 0.8 using the unified interface
+hurst = 0.8
+length = 1440
 
-# Generate correlated vectors
-generator = FilteredArray(h, vectors_length)
-correlated_vectors = generator.generate(n_vectors=total_vectors, threads=threads, progress_bar=True)
-
-print(f"Generated {len(correlated_vectors)} vectors of length {len(correlated_vectors[0])}")
+# Generate fractional Brownian noise using the default Kasdin method
+fbn_series = generate_fbn(hurst=hurst, length=length)
+print(f"Generated fBn series with shape: {fbn_series.shape}")
 ```
 
 ### Analyzing Time Series
 
-```python
-from StatTools.analysis.dfa import DFA
-import numpy as np
-
-# Generate sample data
-np.random.seed(42)
-data = np.random.randn(10000)
-
-# Perform Detrended Fluctuation Analysis
-dfa = DFA(data)
-hurst_exponent = dfa.find_h()
-
-print(f"Estimated Hurst exponent: {hurst_exponent:.3f}")
-```
-
-## Examples
-
-### Generators
-
-#### Logarithmic Fractional Brownian Motion (LBFBM) Generator
+#### Detrended Fluctuation Analysis
 
 ```python
-from StatTools.generators.lbfbm_generator import LBFBmGenerator
-
-# Parameters
-hurst_exponent = 0.8  # H ∈ (0, 2)
-base = 1.2
-sequence_length = 4000
-
-# Create and use generator
-generator = LBFBmGenerator(h=hurst_exponent, base=base, length=sequence_length)
-signal = list(generator)
-
-print(f"Generated signal of length {len(signal)}")
-```
-
-For more details, see [lbfbm_generator.ipynb](research/lbfbm_generator.ipynb).
-
-#### Kasdin Generator for Colored Noise
-
-```python
-from StatTools.generators.kasdin_generator import KasdinGenerator
-
-h = 0.8
-target_len = 4000
-
-generator = KasdinGenerator(h, length=target_len)
-
-# Generate full sequence
-signal = generator.get_full_sequence()
-print(f"Generated signal: {signal[:10]}...")  # First 10 values
-
-# Or iterate through samples
-signal_list = []
-for sample in generator:
-    signal_list.append(sample)
-```
-
-Reference: Kasdin, N. J. (1995). Discrete simulation of colored noise and stochastic processes and 1/f^α power law noise generation. DOI:10.1109/5.381848.
-
-### Fluctuation Analysis
-
-#### Detrended Fluctuation Analysis (DFA)
-
-```python
-from StatTools.generators.base_filter import Filter
-from StatTools.analysis.dfa import DFA
+from StatTools.generators import generate_fbn
+from StatTools.analysis.dfa import dfa
+from StatTools.analysis.utils import analyse_zero_cross_ff
 import numpy as np
 
 h = 0.7  # choose Hurst parameter
 length = 6000  # vector's length
-target_std = 1.0
-target_mean = 0.0
 
-generator = Filter(h, length, set_mean=target_mean, set_std=target_std)
-trajectory = generator.generate(n_vectors=1)[0]  # Get the first (and only) trajectory
+# Generate synthetic data using modern unified interface
+trajectory = generate_fbn(hurst=h, length=length, method="kasdin").flatten()
 
-actual_mean = np.mean(trajectory)
-actual_std = np.std(trajectory, ddof=1)
-actual_h = DFA(trajectory).find_h()
-print(f"Estimated H: {actual_h:.3f} (Expected: {h:.3f})")
+# Analyze using functional-style DFA interface
+s_vals, f2_vals = dfa(trajectory, degree=2)
+
+# Calculate Hurst exponent from fluctuation function
+f_vals = np.sqrt(f2_vals).reshape(1, -1)  # Convert F^2(s) to F(s) and reshape for analysis
+s_vals_2d = s_vals.reshape(1, -1)  # Reshape scales to 2D array
+hurst_result, _ = analyse_zero_cross_ff(f_vals, s_vals_2d)
+hurst_exponent = hurst_result.slopes[0].value
+
+print(f"Estimated H: {hurst_exponent:.3f} (Expected: {h:.3f})")
 ```
 
-## API Reference
+## Support
 
-### Generators
-- `FilteredArray`: Base class for generating correlated datasets
-- `LBFBmGenerator`: Linear Fractional Brownian Motion generator
-- `KasdinGenerator`: Colored noise generator using Kasdin's method
-- `FieldGenerator`: Spatial data generator
+For questions and discussions:
 
-### Analysis Tools
-- `DFA`: Detrended Fluctuation Analysis
-- `DPCCA`: Detrended Partial Cross-Correlation Analysis
-- `FA`: Fluctuation Analysis
-- `QSS`: Quantile Segmentation Statistics
-
-### Filters
-- `KalmanFilter`: Kalman filtering implementation
+- GitHub Issues: <https://github.com/Digiratory/FluctuationAnalysisTools/issues>
+- GitHub Discussions: <https://github.com/Digiratory/FluctuationAnalysisTools/discussions>
 
 ## Research and Examples
 
@@ -178,26 +132,37 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTION.md) f
 - Testing guidelines
 - Submitting pull requests
 
-## Contributors
-
-- [Alexandr Kuzmenko](https://github.com/alexandr-1k)
-- [Aleksandr Sinitca](https://github.com/Sinitca-Aleksandr)
-- [Asya Lyanova](https://github.com/pipipyau)
-
 ## License
 
 This project is licensed under the terms specified in [LICENSE.txt](LICENSE.txt).
 
 ## Citation
 
-If you use StatTools in your research, please cite:
+If you use FluctuationAnalysisTools in your research, please cite:
 
 ```bibtex
-@software{statttools,
-  title = {StatTools: A Python Library for Long-term Dependent Dataset Analysis},
-  author = {Kuzmenko, Alexandr and Sinitca, Aleksandr and Lyanova, Asya},
-  url = {https://github.com/Digiratory/StatTools},
-  version = {1.6.1}
+@article{bogachev2023understanding,
+  title={Understanding the complex interplay of persistent and antipersistent regimes in animal movement trajectories as a prominent characteristic of their behavioral pattern profiles: Towards an automated and robust model based quantification of anxiety test data},
+  author={Bogachev, Mikhail I and Lyanova, Asya I and Sinitca, Aleksandr M and Pyko, Svetlana A and Pyko, Nikita S and Kuzmenko, Alexander V and Romanov, Sergey A and Brikova, Olga I and Tsygankova, Margarita and Ivkin, Dmitry Y and others},
+  journal={Biomedical signal processing and control},
+  volume={81},
+  pages={104409},
+  year={2023},
+  publisher={Elsevier}
+}
+```
+
+and
+
+```bibtex
+@article{bogachev2023video,
+  title={Video-based marker-free tracking and multi-scale analysis of mouse locomotor activity and behavioral aspects in an open field arena: a perspective approach to the quantification of complex gait disturbances associated with Alzheimer's disease},
+  author={Bogachev, Mikhail and Sinitca, Aleksandr and Grigarevichius, Konstantin and Pyko, Nikita and Lyanova, Asya and Tsygankova, Margarita and Davletshin, Eldar and Petrov, Konstantin and Ageeva, Tatyana and Pyko, Svetlana and others},
+  journal={Frontiers in Neuroinformatics},
+  volume={17},
+  pages={1101112},
+  year={2023},
+  publisher={Frontiers Media SA}
 }
 ```
 

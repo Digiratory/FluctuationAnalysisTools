@@ -13,7 +13,7 @@ FluctuationAnalysisTools.egg-info/*
 wheelhouse/*
 .DS_Store
 research/out/*
-
+*.so
 *.pyd
 .clinerules/*
 memory-bank/*
