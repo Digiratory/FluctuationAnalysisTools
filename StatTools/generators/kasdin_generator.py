@@ -1,4 +1,3 @@
-import math
 import warnings
 from itertools import islice
 from typing import Iterator, Optional
@@ -11,7 +10,8 @@ class KasdinGenerator:
     """
     Generates a sequence of numbers according to the Kasdin model.
     Based on the method proposed in the article Kasdin, N. J. (1995).
-        Discrete simulation of colored noise and stochastic processes and 1/f/sup /spl alpha// power law noise generation.
+        Discrete simulation of colored noise and stochastic processes
+        and 1/f/sup /spl alpha// power law noise generation.
         doi:10.1109/5.381848
 
     Args:
@@ -64,10 +64,12 @@ class KasdinGenerator:
         return 2 * self._h - 1
 
     def validate_h(self, h):
+        """Validate the value of h."""
         if not 0.5 <= h <= 1.5:
             raise ValueError("H must be between 0.5 and 1.5")
 
     def init_filter_coefficients(self, beta):
+        """Initialize the filter coefficients based on the given beta."""
         if self.filter_coefficients_length is None:
             self.filter_coefficients_length = self.length
             self.filter_coefficients = np.zeros(self.length, dtype=np.float64)
@@ -163,6 +165,7 @@ def create_kasdin_generator(
     normalize=True,
     filter_coefficients_length=None,
 ) -> KasdinGenerator | ERKasdinGenerator:
+    """Fabric for creating a Kasdin generator."""
     if 0.5 <= h <= 1.5:
         return KasdinGenerator(
             h, length, random_generator, normalize, filter_coefficients_length
