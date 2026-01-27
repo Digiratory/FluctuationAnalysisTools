@@ -156,30 +156,58 @@ def create_signal_pair():
 
         x = Z_full[:-true_lag]
         y = Z_full[true_lag:]
-        signals[h] = np.vstack([x, y])
+        signals[h] = np.vstack([y, x])
     return signals
 
 
 @pytest.mark.parametrize("h", hurst_values)
-@pytest.mark.parametrize("lag", test_lags)
-def test_tdc_dpcca_lags(create_signal_pair, h, lag):
+# @pytest.mark.parametrize("lag", test_lags)
+def test_tdc_dpcca_lags(create_signal_pair, h):
     arr = create_signal_pair[h]
     s = [256, 512, 1024]
     step = 1
     pd = 1
     n_integral = 0
-    true_lag = 6
-    lag_range = np.arange(true_lag - 5, true_lag + 1)
+    true_lag = -6
     p, r, f = tdc_dpcca_worker(
         s=s,
         arr=arr,
         step=step,
         pd=pd,
-        time_delays=lag_range,
+        time_delays=None,
+        max_time_delay=abs(true_lag),
         n_integral=n_integral,
     )
+    lags_arr = np.arange(true_lag, -true_lag + 1)
     for s_idx in range(len(s)):
         correlation = r[:, s_idx, 0, 1]
         max_lag_idx = np.argmax(correlation)
-        estimated_lag = lag_range[max_lag_idx]
+        estimated_lag = lags_arr[max_lag_idx]
+        assert abs(estimated_lag - true_lag) <= 1
+
+
+@pytest.mark.parametrize("h", hurst_values)
+def test_dpcca_with_time_lag(create_signal_pair, h):
+    arr = create_signal_pair[h]
+    s = [256, 512, 1024]
+    step = 1
+    pd = 1
+    n_integral = 0
+    true_lag = -6
+    lags_arr = np.arange(true_lag, -true_lag + 1)
+    p, r, f, s_current = dpcca(
+        arr,
+        pd,
+        step,
+        s,
+        abs(true_lag),
+        buffer=False,
+        gc_params=None,
+        n_integral=n_integral,
+        processes=1,
+    )
+    for s_idx in range(len(s_current)):
+        correlation = r[:, s_idx, 0, 1]
+        max_lag_idx = np.argmax(correlation)
+        estimated_lag = lags_arr[max_lag_idx]
         assert abs(estimated_lag - true_lag) <= 1
