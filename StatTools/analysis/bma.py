@@ -81,11 +81,11 @@ def _bma_worker(
     mask_start_le_zero = start <= 0
     mask_start_gt_zero = ~mask_start_le_zero
 
-    # Обработка start <= 0
+    # Handle start <= 0
     if mask_start_le_zero.any():
         window_sums[:, mask_start_le_zero] = cs[:, end[mask_start_le_zero]]
 
-    # Обработка start > 0
+    # Handle start > 0
     if mask_start_gt_zero.any():
         window_sums[:, mask_start_gt_zero] = (
             cs[:, end[mask_start_gt_zero]] - cs[:, start[mask_start_gt_zero] - 1]
