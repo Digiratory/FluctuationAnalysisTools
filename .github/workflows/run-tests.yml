@@ -118,7 +118,7 @@ jobs:
       - name: Download wheels artifact
         uses: actions/download-artifact@v4
         with:
-          name: fluctuation-analysis-tools-${{ runner.os }}-${{ matrix.python-version }}
+          name: fluctuation-analysis-tools-${{ matrix.os }}-${{ matrix.python-version }}
           path: wheelhouse
 
       - name: Install FluctuationAnalysisTools from wheel
