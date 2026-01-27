@@ -77,7 +77,7 @@ def _bma_worker(
     # Массив для результата
     window_sums = np.empty((cs.shape[0], len(t_indices)), dtype=cs.dtype)
 
-    # Маски
+    # Masks
     mask_start_le_zero = start <= 0
     mask_start_gt_zero = ~mask_start_le_zero
 
