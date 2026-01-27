@@ -74,7 +74,7 @@ def _bma_worker(
     start = t_indices - n + 1
     end = t_indices
 
-    # Массив для результата
+    # Array for result
     window_sums = np.empty((cs.shape[0], len(t_indices)), dtype=cs.dtype)
 
     # Masks
