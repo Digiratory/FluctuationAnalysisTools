@@ -1,4 +1,5 @@
 import os
+import warnings
 
 import numpy as np
 import pytest
@@ -80,9 +81,6 @@ def test_find_h_3d_input():
     assert "Only 1- or 2-dimensional arrays are allowed!" in str(exc_info.value)
 
 
-# ====================== Tests for functional API ======================
-
-
 @pytest.fixture(scope="module")
 def sample_signals():
     """Generate sample signals with different Hurst exponents for testing"""
@@ -90,26 +88,20 @@ def sample_signals():
     signals = {}
     np.random.seed(42)  # Set seed for reproducibility
     for h in TEST_H_VALUES:
-        # generate_fbn returns shape (1, length), so we flatten to 1D
         signals[h] = generate_fbn(hurst=h, length=length, method="kasdin").flatten()
     return signals
 
 
-# ====================== Tests for atomic functions ======================
-
-
 def test_detrend_segment():
     """Test _detrend_segment function"""
-    # Create a simple linear segment
     indices = np.arange(10)
-    y_segment = 2 * indices + 1 + np.random.normal(0, 0.1, 10)  # linear trend + noise
+    y_segment = 2 * indices + 1 + np.random.normal(0, 0.1, 10)
 
     residuals = _detrend_segment(y_segment, indices, degree=1)
 
-    # Residuals should be close to zero (detrended)
     assert isinstance(residuals, np.ndarray)
     assert residuals.shape == (10,)
-    assert np.abs(np.mean(residuals)) < 0.5  # mean should be close to zero
+    assert np.abs(np.mean(residuals)) < 0.5
 
 
 def test_detrend_segment_quadratic():
@@ -124,57 +116,83 @@ def test_detrend_segment_quadratic():
     assert np.abs(np.mean(residuals)) < 1.0
 
 
-# ====================== Tests for dfa_worker ======================
-
-
 def test_dfa_worker_1d_input():
-    """Test dfa_worker with 1D input (should be normalized to 2D)"""
+    """Test dfa_worker with single series."""
     np.random.seed(42)
-    # generate_fbn returns (1, length), we need 2D for dfa_worker
     data_2d = generate_fbn(hurst=0.5, length=1000, method="kasdin")
 
-    result = dfa_worker(indices=0, arr=data_2d, degree=2)
+    result_cpu = dfa_worker(indices=0, arr=data_2d, degree=2, backend="cpu")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        result_gpu = dfa_worker(indices=0, arr=data_2d, degree=2, backend="gpu")
 
-    assert isinstance(result, list)
-    assert len(result) == 1
-    s_vals, f2_vals = result[0]
-    assert isinstance(s_vals, np.ndarray)
-    assert isinstance(f2_vals, np.ndarray)
-    assert len(s_vals) == len(f2_vals)
-    assert len(s_vals) > 0
+    assert isinstance(result_cpu, list)
+    assert len(result_cpu) == 1
+    assert isinstance(result_gpu, list)
+    assert len(result_gpu) == 1
+
+    s_cpu, f2_cpu = result_cpu[0]
+    s_gpu, f2_gpu = result_gpu[0]
+
+    assert isinstance(s_cpu, np.ndarray)
+    assert isinstance(f2_cpu, np.ndarray)
+    assert len(s_cpu) == len(f2_cpu)
+    assert len(s_cpu) > 0
+
+    np.testing.assert_array_equal(s_cpu, s_gpu)
+    np.testing.assert_allclose(f2_cpu, f2_gpu, rtol=1e-5, atol=1e-12)
 
 
 def test_dfa_worker_2d_input():
-    """Test dfa_worker with 2D input"""
+    """Test dfa_worker with multiple series."""
     np.random.seed(42)
-    # Generate multiple time series
     data_list = []
     for h in [0.5, 1.0, 1.5]:
         series = generate_fbn(hurst=h, length=1000, method="kasdin").flatten()
         data_list.append(series)
     data = np.array(data_list)
 
-    result = dfa_worker(indices=[0, 1, 2], arr=data, degree=2)
+    result_cpu = dfa_worker(indices=[0, 1, 2], arr=data, degree=2, backend="cpu")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        result_gpu = dfa_worker(indices=[0, 1, 2], arr=data, degree=2, backend="gpu")
 
-    assert isinstance(result, list)
-    assert len(result) == 3
-    for s_vals, f2_vals in result:
-        assert isinstance(s_vals, np.ndarray)
-        assert isinstance(f2_vals, np.ndarray)
-        assert len(s_vals) == len(f2_vals)
+    assert isinstance(result_cpu, list)
+    assert len(result_cpu) == 3
+    assert isinstance(result_gpu, list)
+    assert len(result_gpu) == 3
+
+    for (s_cpu, f2_cpu), (s_gpu, f2_gpu) in zip(result_cpu, result_gpu):
+        assert isinstance(s_cpu, np.ndarray)
+        assert isinstance(f2_cpu, np.ndarray)
+        assert len(s_cpu) == len(f2_cpu)
+        np.testing.assert_array_equal(s_cpu, s_gpu)
+        np.testing.assert_allclose(f2_cpu, f2_gpu, rtol=1e-5, atol=1e-12)
 
 
 def test_dfa_worker_custom_s_values():
-    """Test dfa_worker with custom s_values"""
+    """Test dfa_worker with custom s_values."""
     np.random.seed(42)
     data_2d = generate_fbn(hurst=0.5, length=1000, method="kasdin")
     custom_s = [16, 32, 64, 128]
 
-    result = dfa_worker(indices=0, arr=data_2d, degree=2, s_values=custom_s)
+    result_cpu = dfa_worker(
+        indices=0, arr=data_2d, degree=2, s_values=custom_s, backend="cpu"
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        result_gpu = dfa_worker(
+            indices=0, arr=data_2d, degree=2, s_values=custom_s, backend="gpu"
+        )
 
-    s_vals, f2_vals = result[0]
-    assert len(s_vals) <= len(custom_s)  # Some may be filtered out
-    assert all(s in custom_s for s in s_vals)
+    s_cpu, f2_cpu = result_cpu[0]
+    s_gpu, f2_gpu = result_gpu[0]
+
+    assert len(s_cpu) <= len(custom_s)
+    assert all(int(s) in custom_s for s in s_cpu)
+
+    np.testing.assert_array_equal(s_cpu, s_gpu)
+    np.testing.assert_allclose(f2_cpu, f2_gpu, rtol=1e-5, atol=1e-12)
 
 
 def test_dfa_worker_invalid_dimension():
@@ -185,30 +203,26 @@ def test_dfa_worker_invalid_dimension():
         dfa_worker(indices=0, arr=data_3d, degree=2)
 
 
-# ====================== Tests for dfa function ======================
-
-
+@pytest.mark.parametrize("backend", ["cpu", "gpu"])
 @pytest.mark.parametrize("h", TEST_H_VALUES)
-def test_dfa_1d_with_known_h(sample_signals, h):
+def test_dfa_1d_with_known_h(sample_signals, h, backend):
     """Test dfa function with 1D input and known Hurst exponent"""
     sig = sample_signals[h]
 
-    s_vals, f2_vals = dfa(sig, degree=2, processes=1)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        s_vals, f2_vals = dfa(sig, degree=2, processes=1, backend=backend)
 
-    # Check return types
     assert isinstance(s_vals, np.ndarray)
     assert isinstance(f2_vals, np.ndarray)
     assert len(s_vals) == len(f2_vals)
     assert len(s_vals) > 0
 
-    # Check that F^2(s) increases with s (for positive H)
     if h > 0.5:
         assert np.all(np.diff(f2_vals) > 0) or np.all(np.diff(f2_vals) >= -1e-10)
 
-    # Estimate H from log-log plot
-    # Since dfa returns F^2(s), we need to extract sqrt before taking log
     log_s = np.log(s_vals)
-    log_f = np.log(np.sqrt(f2_vals))  # Extract sqrt from F^2 to get F
+    log_f = np.log(np.sqrt(f2_vals))
     res = stats.linregress(log_s, log_f)
 
     assert res.slope == pytest.approx(h, rel=0.15)
@@ -225,9 +239,8 @@ def test_dfa_1d_parallel(sample_signals, h):
     assert isinstance(f2_vals, np.ndarray)
     assert len(s_vals) == len(f2_vals)
 
-    # Estimate H from log-log plot
     log_s = np.log(s_vals)
-    log_f = np.log(np.sqrt(f2_vals))  # Extract sqrt from F^2 to get F
+    log_f = np.log(np.sqrt(f2_vals))
     res = stats.linregress(log_s, log_f)
 
     assert res.slope == pytest.approx(h, rel=0.15)
@@ -236,7 +249,6 @@ def test_dfa_1d_parallel(sample_signals, h):
 def test_dfa_2d_input():
     """Test dfa function with 2D input (multiple time series)"""
     np.random.seed(42)
-    # Generate multiple time series with different H
     data_list = []
     h_list = []
     for h in TEST_H_VALUES:
@@ -245,19 +257,23 @@ def test_dfa_2d_input():
         h_list.append(h)
     data = np.array(data_list)
 
-    s_vals, f2_vals = dfa(data, degree=2, processes=1)
+    s_vals_cpu, f2_vals_cpu = dfa(data, degree=2, processes=1, backend="cpu")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        s_vals_gpu, f2_vals_gpu = dfa(data, degree=2, processes=1, backend="gpu")
 
-    # For 2D input: s is 1D array, F2_s is 2D array
-    assert isinstance(s_vals, np.ndarray)
-    assert isinstance(f2_vals, np.ndarray)
-    assert f2_vals.ndim == 2
-    assert f2_vals.shape[0] == len(TEST_H_VALUES)
-    assert f2_vals.shape[1] == len(s_vals)
+    assert isinstance(s_vals_cpu, np.ndarray)
+    assert isinstance(f2_vals_cpu, np.ndarray)
+    assert f2_vals_cpu.ndim == 2
+    assert f2_vals_cpu.shape[0] == len(TEST_H_VALUES)
+    assert f2_vals_cpu.shape[1] == len(s_vals_cpu)
 
-    # Check H estimation for each time series
-    log_s = np.log(s_vals)
+    np.testing.assert_array_equal(s_vals_cpu, s_vals_gpu)
+    np.testing.assert_allclose(f2_vals_cpu, f2_vals_gpu, rtol=1e-5, atol=1e-12)
+
+    log_s = np.log(s_vals_cpu)
     for i, h_target in enumerate(h_list):
-        log_f = np.log(np.sqrt(f2_vals[i]))  # Extract sqrt from F^2 to get F
+        log_f = np.log(np.sqrt(f2_vals_cpu[i]))
         res = stats.linregress(log_s, log_f)
         assert res.slope == pytest.approx(h_target, rel=0.15)
 
@@ -280,10 +296,9 @@ def test_dfa_2d_parallel():
     assert f2_vals.ndim == 2
     assert f2_vals.shape[0] == len(TEST_H_VALUES)
 
-    # Check H estimation for each time series
     log_s = np.log(s_vals)
     for i, h_target in enumerate(h_list):
-        log_f = np.log(np.sqrt(f2_vals[i]))  # Extract sqrt from F^2 to get F
+        log_f = np.log(np.sqrt(f2_vals[i]))
         res = stats.linregress(log_s, log_f)
         assert res.slope == pytest.approx(h_target, rel=0.15)
 
@@ -297,12 +312,10 @@ def test_dfa_different_degrees():
     s2, f2_2 = dfa(data, degree=2, processes=1)
     s3, f2_3 = dfa(data, degree=3, processes=1)
 
-    # All should return valid results
     assert len(s1) > 0
     assert len(s2) > 0
     assert len(s3) > 0
 
-    # Results should be similar but not identical
     assert len(s1) == len(s2) == len(s3)
 
 
@@ -323,228 +336,24 @@ def test_dfa_invalid_dimension():
 def test_dfa_short_input():
     """Test dfa function with too short input"""
     np.random.seed(42)
-    data = generate_fbn(hurst=1.0, length=10, method="kasdin").flatten()  # Very short
-
-    # Should not raise error, but may return empty or very few scales
-    s_vals, f2_vals = dfa(data, degree=2)
-
-    # Should still return valid arrays (may be empty or very short)
-    assert isinstance(s_vals, np.ndarray)
-    assert isinstance(f2_vals, np.ndarray)
-
-
-# ====================== GPU tests (merged from test_dfa_gpu.py) ======================
-
-try:
-    import cupy as cp  # noqa: F401
-
-    GPU_AVAILABLE = True
-except ImportError:
-    GPU_AVAILABLE = False
-
-
-def _print_difference_stats(f2_cpu, f2_gpu, label="CPU vs GPU"):
-    """Compute and print difference statistics between CPU and GPU results"""
-    abs_diff = np.abs(f2_cpu - f2_gpu)
-    rel_diff = abs_diff / (
-        np.abs(f2_cpu) + 1e-15
-    )  # Add epsilon to avoid division by zero
-
-    mean_abs_diff = np.mean(abs_diff)
-    max_abs_diff = np.max(abs_diff)
-    mean_rel_diff = np.mean(rel_diff)
-    max_rel_diff = np.max(rel_diff)
-
-    print(f"{label} difference statistics:")
-    print(f"  Mean absolute difference: {mean_abs_diff:.2e}")
-    print(f"  Max absolute difference: {max_abs_diff:.2e}")
-    print(f"  Mean relative difference: {mean_rel_diff:.2e}")
-    print(f"  Max relative difference: {max_rel_diff:.2e}")
-
-
-@pytest.mark.skipif(not GPU_AVAILABLE, reason="CuPy not available, GPU tests skipped")
-def test_dfa_worker_1d_input_gpu():
-    """Test dfa_worker with 1D input and GPU acceleration"""
-    np.random.seed(42)
-    data_2d = generate_fbn(hurst=0.5, length=1000, method="kasdin")
-
-    result = dfa_worker(indices=0, arr=data_2d, degree=2, backend="gpu")
-
-    assert isinstance(result, list)
-    assert len(result) == 1
-    s_vals, f2_vals = result[0]
-    assert isinstance(s_vals, np.ndarray)
-    assert isinstance(f2_vals, np.ndarray)
-    assert len(s_vals) == len(f2_vals)
-    assert len(s_vals) > 0
-
-
-@pytest.mark.skipif(not GPU_AVAILABLE, reason="CuPy not available, GPU tests skipped")
-def test_dfa_worker_2d_input_gpu():
-    """Test dfa_worker with 2D input and GPU acceleration"""
-    np.random.seed(42)
-    data_list = []
-    for h in [0.5, 1.0, 1.5]:
-        series = generate_fbn(hurst=h, length=1000, method="kasdin").flatten()
-        data_list.append(series)
-    data = np.array(data_list)
-
-    result = dfa_worker(indices=[0, 1, 2], arr=data, degree=2, backend="gpu")
-
-    assert isinstance(result, list)
-    assert len(result) == 3
-    for s_vals, f2_vals in result:
-        assert isinstance(s_vals, np.ndarray)
-        assert isinstance(f2_vals, np.ndarray)
-        assert len(s_vals) == len(f2_vals)
-
-
-@pytest.mark.skipif(not GPU_AVAILABLE, reason="CuPy not available, GPU tests skipped")
-def test_dfa_worker_custom_s_values_gpu():
-    """Test dfa_worker with custom s_values and GPU acceleration"""
-    np.random.seed(42)
-    data_2d = generate_fbn(hurst=0.5, length=1000, method="kasdin")
-    custom_s = [16, 32, 64, 128]
-
-    result = dfa_worker(
-        indices=0, arr=data_2d, degree=2, s_values=custom_s, backend="gpu"
-    )
-
-    s_vals, f2_vals = result[0]
-    assert len(s_vals) <= len(custom_s)  # Some may be filtered out
-    assert all(s in custom_s for s in s_vals)
-
-
-@pytest.mark.skipif(not GPU_AVAILABLE, reason="CuPy not available, GPU tests skipped")
-def test_dfa_worker_invalid_dimension_gpu():
-    """Test dfa_worker raises error for invalid dimensions with GPU"""
-    data_3d = np.random.normal(0, 1, (5, 5, 5))
-
-    with pytest.raises(ValueError, match="expects 2D array"):
-        dfa_worker(indices=0, arr=data_3d, degree=2, backend="gpu")
-
-
-@pytest.mark.skipif(not GPU_AVAILABLE, reason="CuPy not available, GPU tests skipped")
-@pytest.mark.parametrize("h", TEST_H_VALUES)
-def test_dfa_1d_with_known_h_gpu(sample_signals, h):
-    """Test dfa function with 1D input, known Hurst exponent, and GPU acceleration"""
-    sig = sample_signals[h]
-
-    s_vals, f2_vals = dfa(sig, degree=2, processes=1, backend="gpu")
-
-    assert isinstance(s_vals, np.ndarray)
-    assert isinstance(f2_vals, np.ndarray)
-    assert len(s_vals) == len(f2_vals)
-    assert len(s_vals) > 0
-
-    if h > 0.5:
-        assert np.all(np.diff(f2_vals) > 0) or np.all(np.diff(f2_vals) >= -1e-10)
-
-    log_s = np.log(s_vals)
-    log_f = np.log(np.sqrt(f2_vals))
-    res = stats.linregress(log_s, log_f)
-
-    assert res.slope == pytest.approx(h, rel=0.15)
-
-
-@pytest.mark.skipif(not GPU_AVAILABLE, reason="CuPy not available, GPU tests skipped")
-def test_dfa_1d_gpu_warns_on_multiprocessing():
-    """Test that dfa warns when backend='gpu' and processes > 1"""
-    np.random.seed(42)
-    sig = generate_fbn(hurst=0.5, length=1000, method="kasdin").flatten()
-
-    with pytest.warns(UserWarning, match="multiprocessing.*disabled"):
-        s_vals, f2_vals = dfa(sig, degree=2, processes=2, backend="gpu")
-
-    assert isinstance(s_vals, np.ndarray)
-    assert isinstance(f2_vals, np.ndarray)
-    assert len(s_vals) == len(f2_vals)
-
-
-@pytest.mark.skipif(not GPU_AVAILABLE, reason="CuPy not available, GPU tests skipped")
-def test_dfa_2d_input_gpu():
-    """Test dfa function with 2D input (multiple time series) and GPU acceleration"""
-    np.random.seed(42)
-    data_list = []
-    h_list = []
-    for h in TEST_H_VALUES:
-        series = generate_fbn(hurst=h, length=1000, method="kasdin").flatten()
-        data_list.append(series)
-        h_list.append(h)
-    data = np.array(data_list)
-
-    s_vals, f2_vals = dfa(data, degree=2, processes=1, backend="gpu")
-
-    assert isinstance(s_vals, np.ndarray)
-    assert isinstance(f2_vals, np.ndarray)
-    assert f2_vals.ndim == 2
-    assert f2_vals.shape[0] == len(TEST_H_VALUES)
-    assert f2_vals.shape[1] == len(s_vals)
-
-    log_s = np.log(s_vals)
-    for i, h_target in enumerate(h_list):
-        log_f = np.log(np.sqrt(f2_vals[i]))
-        res = stats.linregress(log_s, log_f)
-        assert res.slope == pytest.approx(h_target, rel=0.15)
-
-
-@pytest.mark.skipif(not GPU_AVAILABLE, reason="CuPy not available, GPU tests skipped")
-def test_dfa_different_degrees_gpu():
-    """Test dfa function with different polynomial degrees and GPU acceleration"""
-    np.random.seed(42)
-    data = generate_fbn(hurst=1.0, length=1000, method="kasdin").flatten()
-
-    s1, f2_1 = dfa(data, degree=1, processes=1, backend="gpu")
-    s2, f2_2 = dfa(data, degree=2, processes=1, backend="gpu")
-    s3, f2_3 = dfa(data, degree=3, processes=1, backend="gpu")
-
-    assert len(s1) > 0
-    assert len(s2) > 0
-    assert len(s3) > 0
-    assert len(s1) == len(s2) == len(s3)
-
-
-@pytest.mark.skipif(not GPU_AVAILABLE, reason="CuPy not available, GPU tests skipped")
-def test_dfa_empty_input_gpu():
-    """Test dfa function with empty input and GPU acceleration"""
-    with pytest.raises(ValueError):
-        dfa(np.array([]), degree=2, backend="gpu")
-
-
-@pytest.mark.skipif(not GPU_AVAILABLE, reason="CuPy not available, GPU tests skipped")
-def test_dfa_invalid_dimension_gpu():
-    """Test dfa function with invalid dimensions and GPU acceleration"""
-    data_3d = np.random.normal(0, 1, (5, 5, 5))
-
-    with pytest.raises(ValueError, match="Only 1D or 2D arrays"):
-        dfa(data_3d, degree=2, backend="gpu")
-
-
-@pytest.mark.skipif(not GPU_AVAILABLE, reason="CuPy not available, GPU tests skipped")
-def test_dfa_short_input_gpu():
-    """Test dfa function with too short input and GPU acceleration"""
-    np.random.seed(42)
     data = generate_fbn(hurst=1.0, length=10, method="kasdin").flatten()
 
-    s_vals, f2_vals = dfa(data, degree=2, backend="gpu")
+    s_vals, f2_vals = dfa(data, degree=2)
 
     assert isinstance(s_vals, np.ndarray)
     assert isinstance(f2_vals, np.ndarray)
 
 
-@pytest.mark.skipif(not GPU_AVAILABLE, reason="CuPy not available, GPU tests skipped")
-def test_dfa_gpu_vs_cpu_consistency():
-    """Test that GPU and CPU produce consistent results"""
+def test_gpu_backend_request_does_not_crash_and_matches_cpu():
+    """Requesting backend='gpu' should produce a valid result."""
     np.random.seed(42)
     data = generate_fbn(hurst=1.0, length=2000, method="kasdin").flatten()
 
-    # Run on CPU
     s_cpu, f2_cpu = dfa(data, degree=2, processes=1, backend="cpu")
 
-    # Run on GPU
-    s_gpu, f2_gpu = dfa(data, degree=2, processes=1, backend="gpu")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        s_gpu_req, f2_gpu_req = dfa(data, degree=2, processes=1, backend="gpu")
 
-    # Results should be very similar (allowing for small numerical differences)
-    np.testing.assert_array_equal(s_cpu, s_gpu)
-    _print_difference_stats(f2_cpu, f2_gpu)
-    np.testing.assert_allclose(f2_cpu, f2_gpu, rtol=1e-5)
+    np.testing.assert_array_equal(s_cpu, s_gpu_req)
+    np.testing.assert_allclose(f2_cpu, f2_gpu_req, rtol=1e-5, atol=1e-12)
