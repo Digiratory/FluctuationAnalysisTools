@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   pre-commit-validation:
-    uses: ./.github/workflows/reusable/pre-commit-validation.yml
+    uses: ./.github/workflows/reusable_pre-commit-validation.yml
 
   build-wheels:
     strategy:
@@ -22,7 +22,7 @@ jobs:
         python-version: ["3.11"]
       fail-fast: false
 
-    uses: ./.github/workflows/reusable/build-wheels.yml
+    uses: ./.github/workflows/reusable_build-wheels.yml
     with:
       os: ${{ matrix.os }}
       python-version: ${{ matrix.python-version }}
@@ -43,7 +43,7 @@ jobs:
             artifact-name: fluctuation-analysis-tools-macos-latest-3.11
       fail-fast: false
 
-    uses: ./.github/workflows/reusable/test.yml
+    uses: ./.github/workflows/reusable_test.yml
     with:
       os: ${{ matrix.os }}
       python-version: ${{ matrix.python-version }}
