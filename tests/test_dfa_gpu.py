@@ -63,7 +63,7 @@ def test_dfa_worker_1d_input_gpu():
     # generate_fbn returns (1, length), we need 2D for dfa_worker
     data_2d = generate_fbn(hurst=0.5, length=1000, method="kasdin")
 
-    result = dfa_worker(indices=0, arr=data_2d, degree=2, use_gpu=True)
+    result = dfa_worker(indices=0, arr=data_2d, degree=2, backend="gpu")
 
     assert isinstance(result, list)
     assert len(result) == 1
@@ -85,7 +85,7 @@ def test_dfa_worker_2d_input_gpu():
         data_list.append(series)
     data = np.array(data_list)
 
-    result = dfa_worker(indices=[0, 1, 2], arr=data, degree=2, use_gpu=True)
+    result = dfa_worker(indices=[0, 1, 2], arr=data, degree=2, backend="gpu")
 
     assert isinstance(result, list)
     assert len(result) == 3
@@ -103,7 +103,7 @@ def test_dfa_worker_custom_s_values_gpu():
     custom_s = [16, 32, 64, 128]
 
     result = dfa_worker(
-        indices=0, arr=data_2d, degree=2, s_values=custom_s, use_gpu=True
+        indices=0, arr=data_2d, degree=2, s_values=custom_s, backend="gpu"
     )
 
     s_vals, f2_vals = result[0]
@@ -117,7 +117,7 @@ def test_dfa_worker_invalid_dimension_gpu():
     data_3d = np.random.normal(0, 1, (5, 5, 5))
 
     with pytest.raises(ValueError, match="expects 2D array"):
-        dfa_worker(indices=0, arr=data_3d, degree=2, use_gpu=True)
+        dfa_worker(indices=0, arr=data_3d, degree=2, backend="gpu")
 
 
 # ====================== Tests for dfa function ======================
@@ -129,7 +129,7 @@ def test_dfa_1d_with_known_h_gpu(sample_signals, h):
     """Test dfa function with 1D input, known Hurst exponent, and GPU acceleration"""
     sig = sample_signals[h]
 
-    s_vals, f2_vals = dfa(sig, degree=2, processes=1, use_gpu=True)
+    s_vals, f2_vals = dfa(sig, degree=2, processes=1, backend="gpu")
 
     # Check return types
     assert isinstance(s_vals, np.ndarray)
@@ -152,12 +152,12 @@ def test_dfa_1d_with_known_h_gpu(sample_signals, h):
 
 @pytest.mark.skipif(not GPU_AVAILABLE, reason="CuPy not available, GPU tests skipped")
 def test_dfa_1d_gpu_warns_on_multiprocessing():
-    """Test that dfa warns when use_gpu=True and processes > 1"""
+    """Test that dfa warns when backend='gpu' and processes > 1"""
     np.random.seed(42)
     sig = generate_fbn(hurst=0.5, length=1000, method="kasdin").flatten()
 
     with pytest.warns(UserWarning, match="multiprocessing.*disabled"):
-        s_vals, f2_vals = dfa(sig, degree=2, processes=2, use_gpu=True)
+        s_vals, f2_vals = dfa(sig, degree=2, processes=2, backend="gpu")
 
     assert isinstance(s_vals, np.ndarray)
     assert isinstance(f2_vals, np.ndarray)
@@ -177,7 +177,7 @@ def test_dfa_2d_input_gpu():
         h_list.append(h)
     data = np.array(data_list)
 
-    s_vals, f2_vals = dfa(data, degree=2, processes=1, use_gpu=True)
+    s_vals, f2_vals = dfa(data, degree=2, processes=1, backend="gpu")
 
     # For 2D input: s is 1D array, F2_s is 2D array
     assert isinstance(s_vals, np.ndarray)
@@ -201,9 +201,9 @@ def test_dfa_different_degrees_gpu():
     np.random.seed(42)
     data = generate_fbn(hurst=1.0, length=1000, method="kasdin").flatten()
 
-    s1, f2_1 = dfa(data, degree=1, processes=1, use_gpu=True)
-    s2, f2_2 = dfa(data, degree=2, processes=1, use_gpu=True)
-    s3, f2_3 = dfa(data, degree=3, processes=1, use_gpu=True)
+    s1, f2_1 = dfa(data, degree=1, processes=1, backend="gpu")
+    s2, f2_2 = dfa(data, degree=2, processes=1, backend="gpu")
+    s3, f2_3 = dfa(data, degree=3, processes=1, backend="gpu")
 
     # All should return valid results
     assert len(s1) > 0
@@ -218,7 +218,7 @@ def test_dfa_different_degrees_gpu():
 def test_dfa_empty_input_gpu():
     """Test dfa function with empty input and GPU acceleration"""
     with pytest.raises(ValueError):
-        dfa(np.array([]), degree=2, use_gpu=True)
+        dfa(np.array([]), degree=2, backend="gpu")
 
 
 @pytest.mark.skipif(not GPU_AVAILABLE, reason="CuPy not available, GPU tests skipped")
@@ -227,7 +227,7 @@ def test_dfa_invalid_dimension_gpu():
     data_3d = np.random.normal(0, 1, (5, 5, 5))
 
     with pytest.raises(ValueError, match="Only 1D or 2D arrays"):
-        dfa(data_3d, degree=2, use_gpu=True)
+        dfa(data_3d, degree=2, backend="gpu")
 
 
 @pytest.mark.skipif(not GPU_AVAILABLE, reason="CuPy not available, GPU tests skipped")
@@ -237,7 +237,7 @@ def test_dfa_short_input_gpu():
     data = generate_fbn(hurst=1.0, length=10, method="kasdin").flatten()  # Very short
 
     # Should not raise error, but may return empty or very few scales
-    s_vals, f2_vals = dfa(data, degree=2, use_gpu=True)
+    s_vals, f2_vals = dfa(data, degree=2, backend="gpu")
 
     # Should still return valid arrays (may be empty or very short)
     assert isinstance(s_vals, np.ndarray)
@@ -251,10 +251,10 @@ def test_dfa_gpu_vs_cpu_consistency():
     data = generate_fbn(hurst=1.0, length=2000, method="kasdin").flatten()
 
     # Run on CPU
-    s_cpu, f2_cpu = dfa(data, degree=2, processes=1, use_gpu=False)
+    s_cpu, f2_cpu = dfa(data, degree=2, processes=1, backend="cpu")
 
     # Run on GPU
-    s_gpu, f2_gpu = dfa(data, degree=2, processes=1, use_gpu=True)
+    s_gpu, f2_gpu = dfa(data, degree=2, processes=1, backend="gpu")
 
     # Results should be very similar (allowing for small numerical differences)
     np.testing.assert_array_equal(s_cpu, s_gpu)

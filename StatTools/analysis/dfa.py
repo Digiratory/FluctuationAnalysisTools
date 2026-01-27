@@ -1,20 +1,3 @@
-import numpy as np
-
-try:
-    import cupy as cp
-
-    _GPU_AVAILABLE = True
-except ImportError:
-    cp = None
-    _GPU_AVAILABLE = False
-    import warnings
-
-    warnings.warn(
-        "CuPy not available, GPU acceleration disabled. "
-        "Install with: pip install cupy-cuda11x (or cupy-cuda12x)",
-        UserWarning,
-    )
-
 import time
 import warnings
 from contextlib import closing
@@ -25,7 +8,10 @@ from multiprocessing import Array, Lock, Pool, Value, cpu_count
 from threading import Thread
 from typing import Tuple, Union
 
+import numpy as np
 from tqdm import TqdmWarning, tqdm
+
+_CUPY_WARNED = False
 
 # ====================== DFA core worker ======================
 
@@ -58,7 +44,7 @@ def dfa_worker(
     degree: int = 2,
     s_values: Union[list, np.ndarray, None] = None,
     n_integral: int = 1,
-    use_gpu: bool = False,
+    backend: str = "cpu",
 ) -> list:
     """
     Core of the DFA algorithm. Processes a subset of series (indices) and
@@ -70,7 +56,7 @@ def dfa_worker(
         degree: Polynomial degree for detrending.
         s_values: Pre-calculated box sizes (scales).
         n_integral: Number of cumulative sum operations to apply (default: 1).
-        use_gpu: If True, use GPU acceleration (requires CuPy 13.6+).
+        backend: Computational backend ("cpu" or "gpu").
 
     Returns:
         list of (s, F2_s) for each requested index, where F2_s is F^2(s).
@@ -117,7 +103,27 @@ def dfa_worker(
 
     results = []
 
-    if use_gpu and _GPU_AVAILABLE:
+    if backend not in ("cpu", "gpu"):
+        raise ValueError(f'backend must be "cpu" or "gpu", got: {backend!r}')
+
+    cp = None
+    if backend == "gpu":
+        try:
+            import cupy as cp
+        except ImportError:
+            global _CUPY_WARNED
+            if not _CUPY_WARNED:
+                warnings.warn(
+                    "CuPy not available, GPU acceleration disabled. "
+                    "Switching to CPU backend. "
+                    "Install with: pip install cupy-cuda11x (or cupy-cuda12x)",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                _CUPY_WARNED = True
+            backend = "cpu"
+
+    if backend == "gpu":
         batch_data = cp.asarray(data[indices], dtype=cp.float64)
         n_series_batch = batch_data.shape[0]
         series_len = batch_data.shape[1]
@@ -180,7 +186,7 @@ def dfa_worker(
             f2_array = all_f2_cpu[:, series_idx]
             results.append((s_array, f2_array))
 
-    else:
+    if backend == "cpu":
         for idx in indices:
             series = data[idx]
 
@@ -240,7 +246,7 @@ def dfa(
     degree: int = 2,
     processes: int = 1,
     n_integral: int = 1,
-    use_gpu: bool = False,
+    backend: str = "cpu",
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Implementation of the Detrended Fluctuation Analysis (DFA) method.
@@ -252,9 +258,9 @@ def dfa(
         dataset (ndarray): 1D or 2D array of time series data.
         degree (int): Polynomial degree for detrending (default: 2).
         processes (int): Number of parallel workers (default: 1).
-            Note: If use_gpu=True, multiprocessing is disabled and GPU is used instead.
+            Note: If backend="gpu", multiprocessing is disabled and GPU is used instead.
         n_integral (int): Number of cumulative sum operations to apply (default: 1).
-        use_gpu (bool): If True, use GPU acceleration (requires CuPy 13.6+).
+        backend (str): Computational backend. Options: "cpu" (default), "gpu".
             GPU mode uses single process (multiprocessing disabled).
 
     Returns:
@@ -281,7 +287,27 @@ def dfa(
 
     n_series = data.shape[0]
 
-    if use_gpu and _GPU_AVAILABLE:
+    # Validate backend
+    if backend not in ("cpu", "gpu"):
+        raise ValueError(f'backend must be "cpu" or "gpu", got: {backend!r}')
+
+    if backend == "gpu":
+        try:
+            import cupy as cp
+        except ImportError:
+            global _CUPY_WARNED
+            if not _CUPY_WARNED:
+                warnings.warn(
+                    "CuPy not available, GPU acceleration disabled. "
+                    "Switching to CPU backend. "
+                    "Install with: pip install cupy-cuda11x (or cupy-cuda12x)",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                _CUPY_WARNED = True
+            backend = "cpu"
+
+    if backend == "gpu":
         if processes > 1:
             warnings.warn(
                 f"GPU acceleration enabled: multiprocessing (processes={processes}) "
@@ -295,7 +321,7 @@ def dfa(
             degree=degree,
             s_values=s_values,
             n_integral=n_integral,
-            use_gpu=True,
+            backend="gpu",
         )
     elif processes <= 1:
         indices = np.arange(n_series)
@@ -305,7 +331,7 @@ def dfa(
             degree=degree,
             s_values=s_values,
             n_integral=n_integral,
-            use_gpu=False,
+            backend="cpu",
         )
     else:
         processes = min(processes, cpu_count(), n_series)
@@ -317,7 +343,7 @@ def dfa(
             degree=degree,
             s_values=s_values,
             n_integral=n_integral,
-            use_gpu=False,
+            backend="cpu",
         )
 
         results_list_of_lists = []
@@ -550,7 +576,7 @@ class DFA:
         dataset: Union[np.ndarray, list],
         degree: int,
         root: bool,
-        use_gpu: bool = False,
+        backend: str = "cpu",
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Perform DFA for a single vector and return (log(s), log(F(s))).
@@ -563,8 +589,8 @@ class DFA:
             dataset: Input time series data (1D or 2D).
             degree: Polynomial degree for detrending.
             root: Kept for backward compatibility, not used in current implementation.
-            use_gpu: If True, use GPU acceleration (requires CuPy 13.6+).
-                    Default is False.
+            backend: Computational backend ("cpu" or "gpu").
+                    Default is "cpu".
         """
         data = np.asarray(dataset, dtype=float)
         if data.ndim == 1:
@@ -576,7 +602,7 @@ class DFA:
             degree=degree,
             s_values=None,
             n_integral=1,
-            use_gpu=use_gpu,
+            backend=backend,
         )
         scales, fluct2_values = result_list[0]
 
@@ -588,7 +614,7 @@ class DFA:
         return log_s, log_f
 
     def find_h(
-        self, simple_mode: bool = True, use_gpu: bool = False
+        self, simple_mode: bool = True, backend: str = "cpu"
     ) -> Union[float, np.ndarray]:
         """
         Estimate the Hurst exponent from fluctuation analysis.
@@ -600,8 +626,8 @@ class DFA:
         Args:
             simple_mode: Kept for backward compatibility, not used
                         (always uses linear fit).
-            use_gpu: If True, use GPU acceleration (requires CuPy 13.6+).
-                    Default is False.
+            backend: Computational backend ("cpu" or "gpu").
+                    Default is "cpu".
         """
         if not simple_mode:
             error_str = "\n    Non-linear approximation is not supported yet!"
@@ -615,7 +641,7 @@ class DFA:
             self.degree,
             processes=1,
             n_integral=1,
-            use_gpu=use_gpu,
+            backend=backend,
         )
         self.s, self.F_s = scales, fluct2_values
 
@@ -766,6 +792,7 @@ class DFA:
                 degree=self.degree,
                 s_values=None,
                 n_integral=1,
+                backend="cpu",
             )
             scales, fluct2_values = result_list[0]
 

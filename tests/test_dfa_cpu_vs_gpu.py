@@ -55,8 +55,8 @@ def test_dfa_cpu_vs_gpu_benchmark():
     data = np.array(data_list[:n_series])
 
     # Warm-up runs (to avoid cold start effects)
-    _ = dfa(data, degree=2, processes=1, use_gpu=False)
-    _ = dfa(data, degree=2, processes=1, use_gpu=True)
+    _ = dfa(data, degree=2, processes=1, backend="cpu")
+    _ = dfa(data, degree=2, processes=1, backend="gpu")
 
     # CPU benchmark
     n_cpu_cores = cpu_count()
@@ -64,14 +64,14 @@ def test_dfa_cpu_vs_gpu_benchmark():
     cpu_times = []
     for _ in range(n_runs):
         start = time.perf_counter()
-        s_cpu, f2_cpu = dfa(data, degree=2, processes=n_cpu_cores, use_gpu=False)
+        s_cpu, f2_cpu = dfa(data, degree=2, processes=n_cpu_cores, backend="cpu")
         cpu_times.append(time.perf_counter() - start)
 
     # GPU benchmark
     gpu_times = []
     for _ in range(n_runs):
         start = time.perf_counter()
-        s_gpu, f2_gpu = dfa(data, degree=2, processes=1, use_gpu=True)
+        s_gpu, f2_gpu = dfa(data, degree=2, processes=1, backend="gpu")
         gpu_times.append(time.perf_counter() - start)
 
     avg_cpu_time = np.mean(cpu_times)
@@ -117,11 +117,11 @@ def test_dfa_large_dataset_gpu_advantage():
     # Single run for large dataset
     n_cpu_cores = cpu_count()
     start_cpu = time.perf_counter()
-    s_cpu, f2_cpu = dfa(data, degree=2, processes=n_cpu_cores, use_gpu=False)
+    s_cpu, f2_cpu = dfa(data, degree=2, processes=n_cpu_cores, backend="cpu")
     cpu_time = time.perf_counter() - start_cpu
 
     start_gpu = time.perf_counter()
-    s_gpu, f2_gpu = dfa(data, degree=2, processes=1, use_gpu=True)
+    s_gpu, f2_gpu = dfa(data, degree=2, processes=1, backend="gpu")
     gpu_time = time.perf_counter() - start_gpu
 
     speedup = cpu_time / gpu_time
@@ -160,11 +160,11 @@ def test_dfa_very_large_dataset_gpu_advantage():
     # Single run for very large dataset
     n_cpu_cores = cpu_count()
     start_cpu = time.perf_counter()
-    s_cpu, f2_cpu = dfa(data, degree=2, processes=n_cpu_cores, use_gpu=False)
+    s_cpu, f2_cpu = dfa(data, degree=2, processes=n_cpu_cores, backend="cpu")
     cpu_time = time.perf_counter() - start_cpu
 
     start_gpu = time.perf_counter()
-    s_gpu, f2_gpu = dfa(data, degree=2, processes=1, use_gpu=True)
+    s_gpu, f2_gpu = dfa(data, degree=2, processes=1, backend="gpu")
     gpu_time = time.perf_counter() - start_gpu
 
     speedup = cpu_time / gpu_time
