@@ -70,7 +70,7 @@ def _bma_worker(
 
     t_indices = np.asarray(t_indices)
 
-    # start и end для всех индексов
+    # start and end for all indices
     start = t_indices - n + 1
     end = t_indices
 
