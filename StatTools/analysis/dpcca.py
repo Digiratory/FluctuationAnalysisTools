@@ -436,19 +436,6 @@ def dpcca(
 
         return p, r, f, s
 
-    # if (processes == 1 or len(s) == 1) and max_lag is not None:
-    #     p, r, f = tds_dpcca_worker(
-    #         s,
-    #         arr,
-    #         step,
-    #         pd,
-    #         gc_params=gc_params,
-    #         n_integral=n_integral,
-    #     )
-    #     if concatenate_all:
-    #         return concatenate_3d_matrices(p, r, f) + (s,
-    #     return p, r, f, s
-
     processes = len(s) if processes > len(s) else processes
 
     S = np.array(s, dtype=int) if not isinstance(s, np.ndarray) else s
