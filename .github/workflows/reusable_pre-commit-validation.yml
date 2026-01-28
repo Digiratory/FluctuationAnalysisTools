@@ -1,7 +1,5 @@
 name: Reusable - Pre-commit Validation
 
-describe: 'Reusable workflow for running pre-commit validation'
-
 on:
   workflow_call:
     outputs:
@@ -12,6 +10,8 @@ on:
 jobs:
   pre-commit-validation:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     outputs:
       cache-key:

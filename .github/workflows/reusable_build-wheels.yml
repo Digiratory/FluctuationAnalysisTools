@@ -1,7 +1,5 @@
 name: Reusable - Build Wheels
 
-describe: 'Reusable workflow for building wheels'
-
 on:
   workflow_call:
     inputs:
@@ -17,6 +15,9 @@ on:
       artifact-name:
         description: 'The name of the uploaded artifact'
         value: ${{ jobs.build-wheels.outputs.artifact-name }}
+
+permissions:
+  contents: read
 
 jobs:
   build-wheels:
