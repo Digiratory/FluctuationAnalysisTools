@@ -136,7 +136,7 @@ def dpcca_worker(
     return P, R, F
 
 
-def tdc_dpcca_worker(
+def tds_dpcca_worker(
     s: Union[int, Iterable],
     arr: np.ndarray,
     step: float,
@@ -378,21 +378,22 @@ def dpcca(
                 raise ValueError("Cannot use S > L / 4")
             s = (s,)
 
-        p, r, f = tdc_dpcca_worker(
-            s,
-            arr,
-            step,
-            pd,
-            time_delays=None,
-            max_time_delay=max_lag,
-            gc_params=gc_params,
-            n_integral=n_integral,
-        )
+        if (processes == 1 or len(s) == 1) and max_lag is not None:
+            p, r, f = tds_dpcca_worker(
+                s,
+                arr,
+                step,
+                pd,
+                time_delays=None,
+                max_time_delay=max_lag,
+                gc_params=gc_params,
+                n_integral=n_integral,
+            )
 
-        if concatenate_all:
-            return concatenate_3d_matrices(p, r, f) + (s,)
-        else:
-            return p, r, f, s
+            if concatenate_all:
+                return concatenate_3d_matrices(p, r, f) + (s,)
+            else:
+                return p, r, f, s
 
     if short_vectors:
         return dpcca_worker(
@@ -435,7 +436,7 @@ def dpcca(
         return p, r, f, s
 
     # if (processes == 1 or len(s) == 1) and max_lag is not None:
-    #     p, r, f = tdc_dpcca_worker(
+    #     p, r, f = tds_dpcca_worker(
     #         s,
     #         arr,
     #         step,
@@ -444,8 +445,7 @@ def dpcca(
     #         n_integral=n_integral,
     #     )
     #     if concatenate_all:
-    #         return concatenate_3d_matrices(p, r, f) + (s,)
-
+    #         return concatenate_3d_matrices(p, r, f) + (s,
     #     return p, r, f, s
 
     processes = len(s) if processes > len(s) else processes

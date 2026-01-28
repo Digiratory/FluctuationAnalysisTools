@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from scipy import signal, stats
 
-from StatTools.analysis.dpcca import dpcca, tdc_dpcca_worker
+from StatTools.analysis.dpcca import dpcca, tds_dpcca_worker
 
 testdata = [
     (1.0),
@@ -169,7 +169,7 @@ def test_tdc_dpcca_lags(create_signal_pair, h):
     pd = 1
     n_integral = 0
     true_lag = -6
-    p, r, f = tdc_dpcca_worker(
+    p, r, f = tds_dpcca_worker(
         s=s,
         arr=arr,
         step=step,
