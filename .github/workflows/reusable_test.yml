@@ -54,9 +54,16 @@ jobs:
           path: wheelhouse
 
       - name: Install FluctuationAnalysisTools from wheel
+        if: ${{ inputs.os != 'ubuntu-latest' }}
         shell: bash
         run: |
           pip install wheelhouse/*.whl
+
+      - name: Install FluctuationAnalysisTools from sdist
+        if: ${{ inputs.os == 'ubuntu-latest' }}
+        shell: bash
+        run: |
+          pip install wheelhouse/*.tar.gz
 
       - name: Run tests
         run: |
