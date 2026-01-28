@@ -32,7 +32,7 @@ jobs:
           python-version: ${{ inputs.python-version }}
 
       - name: Install dependencies on MacOS
-        if: inputs.os == 'macos-latest'
+        if: ${{ inputs.os == 'macos-latest' }}
         shell: bash
         run: |
           /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"

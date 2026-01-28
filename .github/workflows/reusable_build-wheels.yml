@@ -24,8 +24,7 @@ jobs:
     runs-on: ${{ inputs.os }}
 
     outputs:
-      artifact-name:
-        value: fluctuation-analysis-tools-${{ inputs.os }}-${{ inputs.python-version }}
+      artifact-name: fluctuation-analysis-tools-${{ inputs.os }}-${{ inputs.python-version }}
 
     steps:
       - name: Checkout repository
@@ -41,12 +40,12 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel build
 
       - name: Build wheels
-        if: inputs.os != 'ubuntu-latest'
+        if: ${{ inputs.os != 'ubuntu-latest' }}
         run: |
           python -m build --wheel --outdir wheelhouse
 
-      - name: Repair Linux wheels
-        if: inputs.os == 'ubuntu-latest'
+      - name: Build sdist (Linux)
+        if: ${{ inputs.os == 'ubuntu-latest' }}
         run: |
           python -m build --sdist --outdir sdisthouse
 

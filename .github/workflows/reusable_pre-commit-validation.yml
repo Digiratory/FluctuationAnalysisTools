@@ -7,11 +7,12 @@ on:
         description: 'The cache key used for pip dependencies'
         value: ${{ jobs.pre-commit-validation.outputs.cache-key }}
 
+permissions:
+      contents: read
+
 jobs:
   pre-commit-validation:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
 
     outputs:
       cache-key:
