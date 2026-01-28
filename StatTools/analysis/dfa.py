@@ -70,12 +70,7 @@ def dfa_worker(
             f"Normalize data to 2D before calling (use reshape(1, -1) for 1D)."
         )
 
-    if isinstance(indices, np.ndarray):
-        indices = indices.tolist()
-    elif not isinstance(indices, list):
-        indices = [int(indices)]
-    else:
-        indices = [int(idx) for idx in indices]
+    indices = np.atleast_1d(indices).astype(int).ravel()
 
     n_series = data.shape[0]
     for idx in indices:
@@ -88,18 +83,11 @@ def dfa_worker(
 
     if s_values is None:
         s_max = int(series_len_global / 4)
-        if s_max <= 0:
-            s_values = []
-        else:
-            steps = np.arange(1.6, np.log(s_max), 0.5)
-            s_values = [int(exp(step)) for step in steps]
+        s_values = [int(exp(step)) for step in np.arange(1.6, np.log(s_max), 0.5)]
     else:
         if isinstance(s_values, np.ndarray):
             s_values = s_values.tolist()
-        elif isinstance(s_values, list):
-            s_values = [int(s) for s in s_values]
-        else:
-            s_values = [int(s_values)]
+        s_values = list(s_values)
 
     results = []
 
@@ -271,6 +259,8 @@ def dfa(
                 F2_s is a 2D array where each row is F^2(s) for one time series.
     """
     data = np.asarray(dataset, dtype=float)
+    if data.size == 0:
+        raise ValueError("Input dataset is empty.")
 
     if data.ndim == 1:
         data = data.reshape(1, -1)
@@ -281,9 +271,8 @@ def dfa(
         raise ValueError("Only 1D or 2D arrays are allowed!")
 
     series_len = data.shape[1]
-    s_values = [
-        int(exp(step)) for step in np.arange(1.6, np.log(int(series_len / 4)), 0.5)
-    ]
+    s_max = int(series_len / 4)
+    s_values = [int(exp(step)) for step in np.arange(1.6, np.log(s_max), 0.5)]
 
     n_series = data.shape[0]
 
@@ -307,23 +296,14 @@ def dfa(
                 _CUPY_WARNED = True
             backend = "cpu"
 
-    if backend == "gpu":
-        if processes > 1:
-            warnings.warn(
-                f"GPU acceleration enabled: multiprocessing (processes={processes}) "
-                f"is disabled. Using single GPU process instead.",
-                UserWarning,
-            )
-        indices = np.arange(n_series)
-        results = dfa_worker(
-            indices=indices,
-            arr=data,
-            degree=degree,
-            s_values=s_values,
-            n_integral=n_integral,
-            backend="gpu",
+    if backend == "gpu" and processes > 1:
+        warnings.warn(
+            f"GPU acceleration enabled: multiprocessing (processes={processes}) "
+            f"is disabled. Using single GPU process instead.",
+            UserWarning,
         )
-    elif processes <= 1:
+
+    if backend == "gpu" or processes <= 1:
         indices = np.arange(n_series)
         results = dfa_worker(
             indices=indices,
@@ -331,7 +311,7 @@ def dfa(
             degree=degree,
             s_values=s_values,
             n_integral=n_integral,
-            backend="cpu",
+            backend=backend,
         )
     else:
         processes = min(processes, cpu_count(), n_series)
