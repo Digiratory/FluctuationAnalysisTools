@@ -1,7 +1,5 @@
 name: Test and Release
 
-describe: 'Unified workflow for testing and releasing the package'
-
 on:
   push:
     tags:
