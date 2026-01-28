@@ -8,7 +8,7 @@ on:
         value: ${{ jobs.pre-commit-validation.outputs.cache-key }}
 
 permissions:
-      contents: read
+  contents: read
 
 jobs:
   pre-commit-validation:
