@@ -168,6 +168,7 @@ def tds_dpcca_worker(
 
     Returns:
         tuple[np.ndarray, np.ndarray, np.ndarray]: [P, R, F], where
+        [P,R,F] is 4d-matrices, where [lag index, index of time scale(s), signal 1, signal 2], where
         p is a partial cross-correlation levels on different time scales, coefficients can be used
             to characterize the `intrinsic` relations between the two time series, where one time series is ahead of the other
             on time scales of S.
