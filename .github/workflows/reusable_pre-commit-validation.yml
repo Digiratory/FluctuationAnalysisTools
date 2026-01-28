@@ -15,8 +15,7 @@ jobs:
     runs-on: ubuntu-latest
 
     outputs:
-      cache-key:
-        value: ${{ steps.cache-pip.outputs.key || 'pip-precommit-' }}
+      cache-key: ${{ steps.cache-pip.outputs.key || 'pip-precommit-' }}
 
     steps:
       - name: Checkout repository
