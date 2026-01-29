@@ -7,6 +7,7 @@ from multiprocessing import Pool
 from typing import Union
 
 import numpy as np
+from deprecated_params import deprecated_params
 
 from StatTools.auxiliary import SharedBuffer
 
@@ -90,8 +91,8 @@ def dpcca_worker(
     n_integral=1,
 ) -> Union[tuple, None]:
     """
-    Core of DPCAA algorithm. Takes bunch of S-values and returns 3 3d-matrices: first index
-    represents S value.
+    Core of DPCCA algorithm. Takes bunch of S-values and returns 3 3d-matrices,
+    where [first index, second index, third index], where [S value, value of signal 1, value of signal 2].
     """
     gc.set_threshold(10, 2, 2)
     s_current = [s] if not isinstance(s, Iterable) else s
@@ -108,9 +109,11 @@ def dpcca_worker(
 
     for s_i, s_val in enumerate(s_current):
 
-        V = np.arange(0, shape[1] - s_val + 1, int(step * s_val))
+        slid_window_start = np.arange(
+            0, shape[1] - s_val + 1, int(step * s_val)
+        )  # array of starting indeces of sliding windows
         Xw = np.arange(s_val, dtype=int)
-        Y = np.zeros((shape[0], len(V)), dtype=object)
+        Y = np.zeros((shape[0], len(slid_window_start)), dtype=object)
         signal_view = np.lib.stride_tricks.sliding_window_view(
             cumsum_arr, s_val, axis=1
         )
@@ -168,7 +171,7 @@ def tds_dpcca_worker(
 
     Returns:
         tuple[np.ndarray, np.ndarray, np.ndarray]: [P, R, F], where
-        [P,R,F] is 4d-matrices, where [lag index, index of time scale(s), signal 1, signal 2], where
+        [P,R,F] is 4d-matrices, where [lag value, S value, signal 1, signal 2], where
         p is a partial cross-correlation levels on different time scales, coefficients can be used
             to characterize the `intrinsic` relations between the two time series, where one time series is ahead of the other
             on time scales of S.
@@ -304,17 +307,20 @@ def concatenate_3d_matrices(p: np.ndarray, r: np.ndarray, f: np.ndarray):
     return P, R, F
 
 
+@deprecated_params(["buffer"], "buffer was deprecated")
 def dpcca(
     arr: np.ndarray,
     pd: int,
     step: float,
     s: Union[int, Iterable],
     max_lag=None,
-    buffer: Union[bool, SharedBuffer] = False,
+    # buffer: Union[bool, SharedBuffer] = False,
     gc_params: tuple = None,
     short_vectors: bool = False,
     n_integral: int = 1,
     processes: int = 1,
+    *,
+    buffer: Union[bool, SharedBuffer] = False,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Implementation of the Detrended Partial-Cross-Correlation Analysis method proposed by Yuan, N. et al.[1]
 
