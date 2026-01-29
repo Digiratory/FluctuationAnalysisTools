@@ -1,4 +1,5 @@
 import gc
+import warnings
 from collections.abc import Iterable
 from contextlib import closing
 from ctypes import c_double
@@ -7,7 +8,6 @@ from multiprocessing import Pool
 from typing import Union
 
 import numpy as np
-from deprecated_params import deprecated_params
 
 from StatTools.auxiliary import SharedBuffer
 
@@ -307,20 +307,17 @@ def concatenate_3d_matrices(p: np.ndarray, r: np.ndarray, f: np.ndarray):
     return P, R, F
 
 
-@deprecated_params(["buffer"], "buffer was deprecated")
 def dpcca(
     arr: np.ndarray,
     pd: int,
     step: float,
     s: Union[int, Iterable],
     max_lag=None,
-    # buffer: Union[bool, SharedBuffer] = False,
+    buffer=None,
     gc_params: tuple = None,
     short_vectors: bool = False,
     n_integral: int = 1,
     processes: int = 1,
-    *,
-    buffer: Union[bool, SharedBuffer] = False,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Implementation of the Detrended Partial-Cross-Correlation Analysis method proposed by Yuan, N. et al.[1]
 
@@ -361,6 +358,12 @@ def dpcca(
             F^2 is a covariance matrix (covariance between any two residuals on each scale),
             S is used scales.
     """
+    if buffer is not None:
+        warnings.warn(
+            message="Parameter buffer is deprecated",
+            category=DeprecationWarning,
+            stacklevel=2,
+        )
 
     if max_lag is not None:
         concatenate_all = False  # concatenate if 1d array , no need to use 3d P, R, F
