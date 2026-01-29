@@ -11,22 +11,26 @@ from typing import Tuple, Union
 import numpy as np
 from tqdm import TqdmWarning, tqdm
 
+_CUPY_WARNED = False
+
 # ====================== DFA core worker ======================
 
 
 def _detrend_segment(
-    y_segment: np.ndarray, indices: np.ndarray, degree: int
+    y_segment: np.ndarray,
+    indices: np.ndarray,
+    degree: int,
 ) -> np.ndarray:
     """
     Compute detrended residuals for a single segment.
 
     Args:
-        y_segment: Integrated time series segment.
-        indices: Indices for polynomial fitting.
+        y_segment: Integrated time series segment (numpy.ndarray).
+        indices: Indices for polynomial fitting (numpy.ndarray).
         degree: Polynomial degree for detrending.
 
     Returns:
-        Residuals (detrended segment).
+        Residuals (detrended segment) as numpy.ndarray.
     """
     coef = np.polyfit(indices, y_segment, deg=degree)
     trend = np.polyval(coef, indices)
@@ -40,6 +44,7 @@ def dfa_worker(
     degree: int = 2,
     s_values: Union[list, np.ndarray, None] = None,
     n_integral: int = 1,
+    backend: str = "cpu",
 ) -> list:
     """
     Core of the DFA algorithm. Processes a subset of series (indices) and
@@ -51,10 +56,12 @@ def dfa_worker(
         degree: Polynomial degree for detrending.
         s_values: Pre-calculated box sizes (scales).
         n_integral: Number of cumulative sum operations to apply (default: 1).
+        backend: Computational backend ("cpu" or "gpu").
 
     Returns:
         list of (s, F2_s) for each requested index, where F2_s is F^2(s).
     """
+
     data = np.asarray(arr, dtype=float)
 
     if data.ndim != 2:
@@ -63,64 +70,158 @@ def dfa_worker(
             f"Normalize data to 2D before calling (use reshape(1, -1) for 1D)."
         )
 
-    if not isinstance(indices, (list, np.ndarray)):
-        indices = [indices]
+    indices = np.atleast_1d(indices).astype(int).ravel()
+
+    n_series = data.shape[0]
+    for idx in indices:
+        if not (0 <= idx < n_series):
+            raise IndexError(
+                f"Index {idx} out of bounds for array with {n_series} series"
+            )
 
     series_len_global = data.shape[1]
+
     if s_values is None:
         s_max = int(series_len_global / 4)
         s_values = [int(exp(step)) for step in np.arange(1.6, np.log(s_max), 0.5)]
     else:
+        if isinstance(s_values, np.ndarray):
+            s_values = s_values.tolist()
         s_values = list(s_values)
 
     results = []
 
-    for idx in indices:
-        series = data[idx]
+    if backend not in ("cpu", "gpu"):
+        raise ValueError(f'backend must be "cpu" or "gpu", got: {backend!r}')
 
-        # Standard DFA preprocessing: mean-centering and integration
-        data_centered = series - np.mean(series)
-        y_cumsum = data_centered
+    cp = None
+    if backend == "gpu":
+        try:
+            import cupy as cp
+        except ImportError:
+            global _CUPY_WARNED
+            if not _CUPY_WARNED:
+                warnings.warn(
+                    "CuPy not available, GPU acceleration disabled. "
+                    "Switching to CPU backend. "
+                    "Install with: pip install cupy-cuda11x (or cupy-cuda12x)",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                _CUPY_WARNED = True
+            backend = "cpu"
+
+    if backend == "gpu":
+        batch_data = cp.asarray(data[indices], dtype=cp.float64)
+        n_series_batch = batch_data.shape[0]
+        series_len = batch_data.shape[1]
+
+        y_batch = batch_data - cp.mean(batch_data, axis=1, keepdims=True)
         for _ in range(n_integral):
-            y_cumsum = np.cumsum(y_cumsum)
-        series_len = len(data_centered)
+            y_batch = cp.cumsum(y_batch, axis=1)
 
-        s_list = []
-        f2_list = []
+        s_list_all = []
+        f2_gpu_list = []  # Store GPU arrays
 
         for s_val in s_values:
             if s_val >= series_len / 4:
                 continue
 
-            s = np.arange(1, s_val + 1, dtype=int)
-            len_s = len(s)
-            cycles_amount = floor(series_len / len_s)
+            cycles_amount = floor(series_len / s_val)
+
             if cycles_amount < 1:
                 continue
 
-            f2_sum = 0.0
-            s_temp = s.copy()
+            n_segments = cycles_amount - 1
 
-            for i in range(1, cycles_amount):
-                indices_s = (s_temp - (i + 0.5) * len_s).astype(int)
-                y_cumsum_s = y_cumsum[s_temp]
+            if n_segments == 0:
+                continue
 
-                # Compute detrended residuals for this segment
-                residuals = _detrend_segment(y_cumsum_s, indices_s, degree)
+            cutoff = 1 + n_segments * s_val
+            y_sliced = y_batch[:, 1:cutoff]
 
-                # Mean squared residual in the window
-                f2 = np.sum(residuals**2) / len_s
+            # Reshape into flat segments
+            flat_segments = y_sliced.reshape(n_series_batch * n_segments, s_val)
 
-                # Accumulate mean squared residuals to get F^2(s)
-                f2_sum += f2
-                s_temp += s_val
+            x = cp.arange(1, s_val + 1, dtype=cp.float64)
+            x_centered = x - 0.5 * s_val
 
-            # Fluctuation function F^2(s)
-            f2_s = f2_sum / cycles_amount
-            s_list.append(s_val)
-            f2_list.append(f2_s)
+            # Polynomial fitting using normal equations
+            V = cp.vander(x_centered, degree + 1, increasing=False)
+            VTV_inv = cp.linalg.inv(V.T @ V)
+            proj_matrix = V @ VTV_inv
 
-        results.append((np.array(s_list), np.array(f2_list)))
+            # Compute coefficients for all segments at once
+            coeffs = flat_segments @ proj_matrix
+
+            trends = coeffs @ V.T
+
+            # Compute F^2(s): mean squared residuals per segment, then mean across segments per series
+            f2_per_seg = cp.mean((flat_segments - trends) ** 2, axis=1)
+            f2_batch = cp.mean(f2_per_seg.reshape(n_series_batch, n_segments), axis=1)
+
+            s_list_all.append(s_val)
+            f2_gpu_list.append(f2_batch)
+
+        # Transfer all results from GPU to CPU
+        if not f2_gpu_list:
+            return [(np.array([]), np.array([])) for _ in range(n_series_batch)]
+
+        all_f2_cpu = cp.stack(f2_gpu_list).get()
+
+        for series_idx in range(n_series_batch):
+            s_array = np.array(s_list_all)
+            f2_array = all_f2_cpu[:, series_idx]
+            results.append((s_array, f2_array))
+
+    if backend == "cpu":
+        for idx in indices:
+            series = data[idx]
+
+            if series.ndim > 1:
+                series = series.flatten()
+
+            data_centered = series - np.mean(series)
+            y_cumsum = data_centered
+            for _ in range(n_integral):
+                y_cumsum = np.cumsum(y_cumsum)
+
+            series_len = len(data_centered)
+
+            s_list = []
+            f2_list = []
+
+            for s_val in s_values:
+                if s_val >= series_len / 4:
+                    continue
+
+                s = np.arange(1, s_val + 1, dtype=int)
+                cycles_amount = floor(series_len / s_val)
+
+                if cycles_amount < 1:
+                    continue
+
+                f2_sum = 0.0
+                s_temp = s.copy()
+
+                for i in range(1, cycles_amount):
+                    # Center indices for polynomial fitting: subtract (i + 0.5) * s_val
+                    indices_s = (s_temp - (i + 0.5) * s_val).astype(int)
+                    y_cumsum_s = y_cumsum[s_temp]
+
+                    residuals = _detrend_segment(y_cumsum_s, indices_s, degree)
+                    f2 = np.sum(residuals**2) / s_val
+
+                    f2_sum += f2
+                    s_temp += s_val
+
+                f2_s = f2_sum / (cycles_amount - 1)
+                s_list.append(s_val)
+                f2_list.append(f2_s)
+
+            s_array = np.array(s_list)
+            f2_array = np.array(f2_list)
+            results.append((s_array, f2_array))
 
     return results
 
@@ -133,6 +234,7 @@ def dfa(
     degree: int = 2,
     processes: int = 1,
     n_integral: int = 1,
+    backend: str = "cpu",
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Implementation of the Detrended Fluctuation Analysis (DFA) method.
@@ -144,7 +246,10 @@ def dfa(
         dataset (ndarray): 1D or 2D array of time series data.
         degree (int): Polynomial degree for detrending (default: 2).
         processes (int): Number of parallel workers (default: 1).
+            Note: If backend="gpu", multiprocessing is disabled and GPU is used instead.
         n_integral (int): Number of cumulative sum operations to apply (default: 1).
+        backend (str): Computational backend. Options: "cpu" (default), "gpu".
+            GPU mode uses single process (multiprocessing disabled).
 
     Returns:
         tuple: (s, F2_s)
@@ -154,6 +259,8 @@ def dfa(
                 F2_s is a 2D array where each row is F^2(s) for one time series.
     """
     data = np.asarray(dataset, dtype=float)
+    if data.size == 0:
+        raise ValueError("Input dataset is empty.")
 
     if data.ndim == 1:
         data = data.reshape(1, -1)
@@ -168,9 +275,35 @@ def dfa(
     s_values = [int(exp(step)) for step in np.arange(1.6, np.log(s_max), 0.5)]
 
     n_series = data.shape[0]
-    results = None
 
-    if processes <= 1:
+    # Validate backend
+    if backend not in ("cpu", "gpu"):
+        raise ValueError(f'backend must be "cpu" or "gpu", got: {backend!r}')
+
+    if backend == "gpu":
+        try:
+            import cupy as cp
+        except ImportError:
+            global _CUPY_WARNED
+            if not _CUPY_WARNED:
+                warnings.warn(
+                    "CuPy not available, GPU acceleration disabled. "
+                    "Switching to CPU backend. "
+                    "Install with: pip install cupy-cuda11x (or cupy-cuda12x)",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                _CUPY_WARNED = True
+            backend = "cpu"
+
+    if backend == "gpu" and processes > 1:
+        warnings.warn(
+            f"GPU acceleration enabled: multiprocessing (processes={processes}) "
+            f"is disabled. Using single GPU process instead.",
+            UserWarning,
+        )
+
+    if backend == "gpu" or processes <= 1:
         indices = np.arange(n_series)
         results = dfa_worker(
             indices=indices,
@@ -178,6 +311,7 @@ def dfa(
             degree=degree,
             s_values=s_values,
             n_integral=n_integral,
+            backend=backend,
         )
     else:
         processes = min(processes, cpu_count(), n_series)
@@ -189,6 +323,7 @@ def dfa(
             degree=degree,
             s_values=s_values,
             n_integral=n_integral,
+            backend="cpu",
         )
 
         results_list_of_lists = []
@@ -421,6 +556,7 @@ class DFA:
         dataset: Union[np.ndarray, list],
         degree: int,
         root: bool,
+        backend: str = "cpu",
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Perform DFA for a single vector and return (log(s), log(F(s))).
@@ -433,6 +569,8 @@ class DFA:
             dataset: Input time series data (1D or 2D).
             degree: Polynomial degree for detrending.
             root: Kept for backward compatibility, not used in current implementation.
+            backend: Computational backend ("cpu" or "gpu").
+                    Default is "cpu".
         """
         data = np.asarray(dataset, dtype=float)
         if data.ndim == 1:
@@ -444,6 +582,7 @@ class DFA:
             degree=degree,
             s_values=None,
             n_integral=1,
+            backend=backend,
         )
         scales, fluct2_values = result_list[0]
 
@@ -454,7 +593,9 @@ class DFA:
 
         return log_s, log_f
 
-    def find_h(self, simple_mode: bool = True) -> Union[float, np.ndarray]:
+    def find_h(
+        self, simple_mode: bool = True, backend: str = "cpu"
+    ) -> Union[float, np.ndarray]:
         """
         Estimate the Hurst exponent from fluctuation analysis.
 
@@ -465,6 +606,8 @@ class DFA:
         Args:
             simple_mode: Kept for backward compatibility, not used
                         (always uses linear fit).
+            backend: Computational backend ("cpu" or "gpu").
+                    Default is "cpu".
         """
         if not simple_mode:
             error_str = "\n    Non-linear approximation is not supported yet!"
@@ -478,6 +621,7 @@ class DFA:
             self.degree,
             processes=1,
             n_integral=1,
+            backend=backend,
         )
         self.s, self.F_s = scales, fluct2_values
 
@@ -485,26 +629,22 @@ class DFA:
 
         if self.dataset.ndim == 1:
             log_f = np.log(np.sqrt(self.F_s))
-            slope = self._hurst_exponent(log_s, log_f, simple_mode=True)
-            h_value = slope
+            return self._hurst_exponent(log_s, log_f, simple_mode=True)
         else:
             n_series = self.dataset.shape[0]
             h_array = np.empty(n_series, dtype=float)
             for i in range(n_series):
                 log_f = np.log(np.sqrt(self.F_s[i]))
-                slope = self._hurst_exponent(log_s, log_f, simple_mode=True)
-                h_array[i] = slope
-            h_value = h_array
-
-        return h_value
+                h_array[i] = self._hurst_exponent(log_s, log_f, simple_mode=True)
+            return h_array
 
     def parallel_2d(
         self,
         threads: int = cpu_count(),
         progress_bar: bool = False,
         h_control: bool = False,
-        h_target: float = float(),
-        h_limit: float = float(),
+        h_target: float = 0.0,
+        h_limit: float = 0.0,
     ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         """
         Parallel computation of Hurst exponents for 2D datasets.
@@ -624,7 +764,6 @@ class DFA:
         for i in indices:
             vector = all_data[i]
 
-            # Normalize to 2D format (single row)
             vector_2d = vector.reshape(1, -1)
 
             result_list = dfa_worker(
@@ -633,13 +772,13 @@ class DFA:
                 degree=self.degree,
                 s_values=None,
                 n_integral=1,
+                backend="cpu",
             )
             scales, fluct2_values = result_list[0]
 
             log_s = np.log(scales)
             log_f = np.log(np.sqrt(fluct2_values))
-            slope = self._hurst_exponent(log_s, log_f, simple_mode=True)
-            h_calc = slope
+            h_calc = self._hurst_exponent(log_s, log_f, simple_mode=True)
 
             np.frombuffer(estimations.get_obj())[i] = h_calc
 
