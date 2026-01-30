@@ -1,3 +1,7 @@
+"""Kalman filter implementation."""
+
+from dataclasses import dataclass
+
 import numpy as np
 from filterpy.kalman import KalmanFilter
 from numpy.typing import NDArray
@@ -9,6 +13,32 @@ from StatTools.filters.symbolic_kalman import (
     refine_filter_matrix,
 )
 from StatTools.generators.kasdin_generator import create_kasdin_generator
+
+
+@dataclass
+class KalmanParams:
+    """
+    Kalman filter parameters.
+
+    Attributes:
+        model_h (float | NDArray[np.float64]): Hurst exponent or fractal model
+            parameter used for automatic transition-matrix construction.
+        noise_var (float | list[float]): Measurement noise variance.
+        kasdin_lenght (int): Length of the signal used by the Kasdin generator
+            when constructing the transition matrix automatically.
+        dt (float): Time interval between measurements. Defaults to 1.
+        order (int | None): System order (state dimension).
+        F (NDArray[np.float64] | None): Custom state-transition matrix. If
+            provided, it is used directly and overrides automatic calculation
+            of `F`.
+    """
+
+    model_h: float | NDArray[np.float64]
+    noise_var: float | list[float]
+    kasdin_length: int
+    dt: float = 1.0
+    order: int | None = None
+    F: NDArray[np.float64] | None = None
 
 
 class FractalKalmanFilter(KalmanFilter):
@@ -153,20 +183,39 @@ class FractalKalmanFilter(KalmanFilter):
             ar_vector(NDArray[np.float64]): Autoregressive filter coefficients
         """
         # TODO: add Q matrix auto configuration
-        if order is None:
-            order = self.dim_x
-        model_h = get_extra_h_dfa(signal)
-        kasdin_lenght = len(signal)
+        self.H[0][0] = 1.0
+        params = KalmanParams(
+            model_h=get_extra_h_dfa(signal),
+            noise_var=np.std(noise) ** 2,
+            kasdin_length=len(signal),
+            dt=dt,
+            order=order,
+        )
+        self.set_parameters(params)
 
-        f_matrix = self.get_filter_matrix(order, model_h, kasdin_lenght, dt)
-        r_matrix = np.std(noise) ** 2
-        h_matrix = self.H
-        h_matrix[0][0] = 1.0
-        self.set_matrices(h_matrix, r_matrix, f_matrix)
+    def set_parameters(self, params: KalmanParams) -> None:
+        """
+        Set Kalman filter parameters (R, F, H) either automatically or manually.
 
-    def set_matrices(self, h_matrix, r_matrix, f_matrix):
-        if isinstance(r_matrix, list):
-            raise NotImplementedError("R error. Only for 1d data")
-        self.H = h_matrix
-        self.R = r_matrix
-        self.F = f_matrix
+        Parameters:
+            Parameters:
+        params (KalmanParams): Container with all parameter values.
+        """
+        order = params.order if params.order is not None else self.dim_x
+        if isinstance(params.noise_var, list):
+            raise NotImplementedError("Only for 1d data")
+
+        self.H[0][0] = 1.0
+        self.R = params.noise_var
+
+        if params.F is not None:
+            F = np.asarray(params.F, dtype=float)
+            if F.shape != (self.dim_x, self.dim_x):
+                raise ValueError(
+                    f"Provided F has shape {F.shape}, expected {(self.dim_x, self.dim_x)}"
+                )
+            self.F = F
+        else:
+            self.F = self.get_filter_matrix(
+                order, params.model_h, params.kasdin_length, params.dt
+            )
