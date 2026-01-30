@@ -62,3 +62,13 @@ def test_set_parameters_invalid_F_shape():
 
     with pytest.raises(ValueError):
         kf.set_parameters(params)
+
+
+def test_init_with_cashed_F():
+    """Test that set parameters with provided F works correctly."""
+    kf = FractalKalmanFilter(dim_x=2, dim_z=1)
+    params = KalmanParams(
+        model_h=0.5, noise_var=0.01, kasdin_length=10, F=np.array([[1, 1], [1, 0]])
+    )
+    kf.set_parameters(params)
+    assert np.equal(kf.F, np.array([[1, 1], [1, 0]])).all()
