@@ -1,53 +1,76 @@
 import multiprocessing
+import warnings
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 
 from StatTools.experimental.analysis.tools import get_extra_h_dfa
-from StatTools.experimental.augmentation.perturbations import add_poisson_gaps
+from StatTools.experimental.augmentation.perturbations import (
+    add_noise,
+    add_poisson_gaps,
+)
+from StatTools.experimental.synthesis.tools import (
+    adjust_hurst_to_range,
+    reverse_hurst_adjustment,
+)
 from StatTools.filters.kalman_filter import FractalKalmanFilter
 from StatTools.generators.kasdin_generator import create_kasdin_generator
+from StatTools.utils import io
+
+warnings.filterwarnings("ignore")
+
+kalman_cache_folder = Path("/home/jovyan/git/FluctuationAnalysisTools/filter_matrices")
 
 
-def process_single_iter(args):
-    """Обрабатывает одну итерацию с заданным H, s (порядок ФФ) и возвращает результаты"""
-    h, s, r_list, trj_len, n_times = args
+def process_snr_h_iter(args):
+    """Обрабатывает одну итерацию с заданным H, s (порядок ФФ), SNR n_times и возвращает результаты"""
+    h, s, r_list, trj_len, snr, n_times = args
+    h_list = np.arange(0.5, 3.75, 0.25)
+
     results_local = []
-    print(f"H={h}")
-    for _ in range(n_times):
-        signal = get_signal(h, trj_len, s)
-        for r in r_list:
-            gaps_signals = {}
-            gaps_signals["gaps_short_signal"] = add_poisson_gaps(signal, 0.1, s / 2)
-            gaps_signals["gaps_eq_signal"] = add_poisson_gaps(signal, 0.1, s)
-            gaps_signals["gaps_long_signal"] = add_poisson_gaps(signal, 0.1, s * 2)
-            for name, gap_signal in gaps_signals.items():
-                restored_signal = apply_kalman_filter(signal, gap_signal, h, r)
-                metrics = get_metrics(signal, restored_signal)
-                if name == "gaps_short_signal":
-                    gaps_len = s / 2
-                elif name == "gaps_eq_signal":
-                    gaps_len = s
-                else:
-                    gaps_len = s * 2
 
+    for _ in range(n_times):
+        signal = get_signal(h, TRJ_LEN, s, normalize=False)
+        signal -= np.mean(signal)
+        signal /= np.std(signal)
+        signal -= signal[0]
+        h_s = get_extra_h_dfa(signal)
+        adjusted_signal, applied_steps = adjust_hurst_to_range(signal)
+        noisy_signal, noise = add_noise(adjusted_signal, ratio=snr)
+        for r in r_list:
+            for model_h in h_list:
+                estimated_signal = apply_kalman_filter_cached(
+                    noisy_signal,
+                    model_h=model_h,
+                    r=r,
+                    noise=noise,
+                    cache_folder=kalman_cache_folder,
+                )
+                estimated_signal = reverse_hurst_adjustment(
+                    estimated_signal, applied_steps
+                )
+                se = np.nanstd(signal[0 : len(estimated_signal)] - estimated_signal)
+                h_est = get_extra_h_dfa(estimated_signal)
                 results_local.append(
                     {
-                        "h": h,
-                        "H_signal": metrics["H_signal"],
-                        "H_restored": metrics["H_restored"],
-                        "signal_length": len(signal),
+                        "H_target": h,
+                        "H_signal": h_s,
+                        "H_estimated": h_est,
+                        "signal_len": len(signal),
                         "s": s,
                         "r": r,
-                        "gaps_len": gaps_len,
-                        "MSE": metrics["MSE"],
+                        "SNR": snr,
+                        "SE": se,
+                        "H_kalman": model_h,
                     }
                 )
     return results_local
 
 
 def get_r_list() -> list:
-    return [2, 4, 8]
+    return np.array([2**i for i in range(1, 6)])
 
 
 def get_signal(h: float, length: int, s: int, normalize=False) -> np.array:
@@ -55,20 +78,43 @@ def get_signal(h: float, length: int, s: int, normalize=False) -> np.array:
     generator = create_kasdin_generator(
         h, length=length, filter_coefficients_length=s, normalize=normalize
     )
-    signal = generator.get_full_sequence()
-    if not normalize:
-        return signal
+    return generator.get_full_sequence()
 
 
-def apply_kalman_filter(
-    orig_signal: np.array, signal, model_h: np.array, r: int, noise=None
+def apply_kalman_filter(signal, model_h: np.array, r: int, noise=None) -> np.array:
+    f = FractalKalmanFilter(dim_x=r, dim_z=1)
+    if noise is None:
+        noise = np.zeros(len(signal))
+    f_matrix = f.get_filter_matrix(r, model_h, len(signal))
+    r_matrix = np.std(noise) ** 2
+    h_matrix = f.H
+    h_matrix[0][0] = 1.0
+    f.set_matrices(h_matrix, r_matrix, f_matrix)
+
+    estimated_signal = np.zeros(len(signal))
+    for k in range(1, len(signal)):
+        f.predict()
+        if not np.isnan(signal[k]):
+            f.update(signal[k])
+        estimated_signal[k] = f.x[0].item()
+    return estimated_signal
+
+
+def apply_kalman_filter_cached(
+    signal, model_h: np.array, r: int, cache_folder: Path, noise=None
 ) -> np.array:
     f = FractalKalmanFilter(dim_x=r, dim_z=1)
     if noise is None:
-        noise = np.zeros(len(orig_signal))
-    f.set_parameters(model_h, np.std(noise) ** 2, kasdin_lenght=len(signal), order=r)
+        noise = np.zeros(len(signal))
+    file_path = cache_folder / f"{model_h}_{r}.npy"
+    f_matrix = io.load_np_matrix(file_path)
+    r_matrix = np.std(noise) ** 2
+    h_matrix = f.H
+    h_matrix[0][0] = 1.0
+    f.set_matrices(h_matrix, r_matrix, f_matrix)
+
     estimated_signal = np.zeros(len(signal))
-    for k in range(1, len(signal)):
+    for k in range(0, len(signal)):
         f.predict()
         if not np.isnan(signal[k]):
             f.update(signal[k])
@@ -103,48 +149,56 @@ def get_s_list(length: int) -> list:
 
 
 if __name__ == "__main__":
-    H_LIST = np.arange(0.5, 5.25, 0.25)
-    TRJ_LEN = 2**12
+    print("Prepare args...")
+    args_list = []
+    H_LIST = np.arange(0.5, 3.75, 0.25)
+    R_LIST = [4]  # np.array([2**i for i in range(1, 6)])
+    TRJ_LEN = 2**14
     n_times = 5
-    print(H_LIST, TRJ_LEN)
+    s = TRJ_LEN
+    SNR_LIST = [0.5]  # [0.1, 0.5, 1, 2]
     metrics_df = pd.DataFrame(
         columns=[
             "H_target",
             "H_signal",
-            "H_restored",
+            "H_estimated",
             "signal_len",
             "s",
             "r",
-            "gaps",
-            "MSE",
+            "SNR",
+            "SE",
+            "H_kalman",
         ]
     )
-    print("Prepare args...")
-    args_list = []
-    r_list = get_r_list()
-    s_list = get_s_list(TRJ_LEN)
-    for h in H_LIST:
-        for s in s_list:
-            args_list.append((h, s, r_list, TRJ_LEN, n_times))
-    print(f"Got {len(args_list) * len(r_list)} combinations for {n_times} times.")
+    for snr in SNR_LIST:
+        for h in H_LIST:
+            args_list.append((h, s, R_LIST, TRJ_LEN, snr, n_times))
+    print(f"Got {len(args_list) * len(R_LIST)} combinations for {n_times} times.")
 
     print("Run pool")
     with multiprocessing.Pool() as pool:
-        results = pool.map(process_single_iter, args_list)
+        results = list(
+            tqdm(
+                pool.imap_unordered(process_snr_h_iter, args_list),
+                total=len(args_list),
+                desc="Progress",
+            )
+        )
 
     print("Prepare results")
     for res in results:
         for row in res:
             metrics_df.loc[len(metrics_df)] = [
-                row["h"],
+                row["H_target"],
                 row["H_signal"],
-                row["H_restored"],
-                row["signal_length"],
+                row["H_estimated"],
+                row["signal_len"],
                 row["s"],
                 row["r"],
-                row["gaps_len"],
-                row["MSE"],
+                row["SNR"],
+                row["SE"],
+                row["H_kalman"],
             ]
-    file_name = "kalman-beta.csv"
+    file_name = "kalman-4.csv"
     metrics_df.to_csv(file_name, index=False)
-    print(f"Matrics saved to {file_name}")
+    print(f"Metrics saved to {file_name}")
