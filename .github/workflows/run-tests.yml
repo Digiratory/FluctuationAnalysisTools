@@ -13,71 +13,7 @@ permissions:
 
 jobs:
   pre-commit-validation:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
-
-      - name: Install pre-commit
-        run: |
-          pip install pre-commit
-
-      - name: Run pre-commit validation
-        run: |
-          pre-commit run --all-files
-
-  test:
-    needs: pre-commit-validation
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.11"]
-      fail-fast: false
-
-    runs-on: ${{ matrix.os }}
-
-    env:
-      CI: true
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install dependencies on MacOS
-        if: matrix.os == 'macos-latest'
-        shell: bash
-        run: |
-          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          brew install numpy scipy
-          python -m pip install --upgrade pip wheel setuptools
-          pip install pytest pytest-timeout
-
-      - name: Install dependencies
-        if: matrix.os != 'macos-latest'
-        shell: bash
-        run: |
-          python -m pip install --upgrade pip wheel
-          pip install pytest pytest-timeout
-
-      - name: Install FluctuationAnalysisTools
-        shell: bash
-        run: |
-          pip install .
-
-      - name: Run tests
-        run: |
-          pytest tests/
+    uses: ./.github/workflows/reusable_pre-commit-validation.yml
 
   build-wheels:
     strategy:
@@ -86,28 +22,29 @@ jobs:
         python-version: ["3.11"]
       fail-fast: false
 
-    runs-on: ${{ matrix.os }}
-    needs: test
+    uses: ./.github/workflows/reusable_build-wheels.yml
+    with:
+      os: ${{ matrix.os }}
+      python-version: ${{ matrix.python-version }}
+    needs: pre-commit-validation
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+  test:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python-version: "3.11"
+            artifact-name: fluctuation-analysis-tools-ubuntu-latest-3.11
+          - os: windows-latest
+            python-version: "3.11"
+            artifact-name: fluctuation-analysis-tools-windows-latest-3.11
+          - os: macos-latest
+            python-version: "3.11"
+            artifact-name: fluctuation-analysis-tools-macos-latest-3.11
+      fail-fast: false
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install build dependencies
-        run: |
-          python -m pip install --upgrade pip setuptools wheel build
-
-      - name: Build wheels
-        run: |
-          python -m build --wheel --outdir wheelhouse
-
-      - name: Upload wheels as artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: fluctuation-analysis-tools-${{ matrix.os }}-${{ matrix.python-version }}
-          path: ./wheelhouse/*.whl
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      os: ${{ matrix.os }}
+      python-version: ${{ matrix.python-version }}
+    needs: build-wheels

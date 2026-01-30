@@ -70,22 +70,22 @@ def _bma_worker(
 
     t_indices = np.asarray(t_indices)
 
-    # start и end для всех индексов
+    # start and end for all indices
     start = t_indices - n + 1
     end = t_indices
 
-    # Массив для результата
+    # Array for result
     window_sums = np.empty((cs.shape[0], len(t_indices)), dtype=cs.dtype)
 
-    # Маски
+    # Masks
     mask_start_le_zero = start <= 0
     mask_start_gt_zero = ~mask_start_le_zero
 
-    # Обработка start <= 0
+    # Handle start <= 0
     if mask_start_le_zero.any():
         window_sums[:, mask_start_le_zero] = cs[:, end[mask_start_le_zero]]
 
-    # Обработка start > 0
+    # Handle start > 0
     if mask_start_gt_zero.any():
         window_sums[:, mask_start_gt_zero] = (
             cs[:, end[mask_start_gt_zero]] - cs[:, start[mask_start_gt_zero] - 1]
