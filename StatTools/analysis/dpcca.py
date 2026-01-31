@@ -12,6 +12,20 @@ import numpy as np
 from StatTools.auxiliary import SharedBuffer
 
 
+def _covariation_single_signal(signal: np.ndarray):
+    """
+    Implementation equation (4) from [1]
+
+    [1] Yuan, N., Fu, Z., Zhang, H. et al. Detrended Partial-Cross-Correlation Analysis: A New Method for Analyzing Correlations in Complex System. Sci Rep 5, 8143 (2015). https://doi.org/10.1038/srep08143
+    """
+    F = np.zeros((signal.shape[0], signal.shape[0]), dtype=float)
+    for n in range(signal.shape[0]):
+        for m in range(n + 1):
+            F[n][m] = np.mean(signal[n] * signal[m])
+            F[m][n] = F[n][m]
+    return F
+
+
 def _covariation(signal_1: np.ndarray, signal_2: np.ndarray = None):
     """
     Implementation equation (4) from [1]
@@ -19,12 +33,11 @@ def _covariation(signal_1: np.ndarray, signal_2: np.ndarray = None):
     [1] Yuan, N., Fu, Z., Zhang, H. et al. Detrended Partial-Cross-Correlation Analysis: A New Method for Analyzing Correlations in Complex System. Sci Rep 5, 8143 (2015). https://doi.org/10.1038/srep08143
     """
     if signal_2 is None:
-        signal_2 = signal_1
+        return _covariation_single_signal(signal_1)
     F = np.zeros((signal_1.shape[0], signal_1.shape[0]), dtype=float)
     for n in range(signal_1.shape[0]):
         for m in range(signal_2.shape[0]):
             F[n][m] = np.mean(signal_1[n] * signal_2[m])
-            F[m][n] = F[n][m]
     return F
 
 
@@ -67,7 +80,6 @@ def _detrend(current_signal: np.ndarray, pd: np.int32):
         current_signal (np.ndarray): Array with original data or data with time lags.
         pd (np.int32): polynomial degree.
 
-
     Returns:
         y_detrended(np.ndarray): Detrended data array.
     """
@@ -93,6 +105,15 @@ def dpcca_worker(
     """
     Core of DPCCA algorithm. Takes bunch of S-values and returns 3 3d-matrices,
     where [first index, second index, third index], where [S value, value of signal 1, value of signal 2].
+
+    Args:
+    s (Union[int, Iterable]): points where  fluctuation function F(s) is calculated.
+    arr (ndarray): dataset array.
+    step (float): share of S - value.
+    pd (np.int32): polynomial degree.
+    gc_params (tuple, optional): _description_. Defaults to None.
+    short_vectors (bool, optional): _description_. Defaults to False.
+    n_integral (int, optional): Number of cumsum operation before computation. Defaults to 1.
     """
     gc.set_threshold(10, 2, 2)
     s_current = [s] if not isinstance(s, Iterable) else s
@@ -109,11 +130,11 @@ def dpcca_worker(
 
     for s_i, s_val in enumerate(s_current):
 
-        slid_window_start = np.arange(
+        window_start_indices = np.arange(
             0, shape[1] - s_val + 1, int(step * s_val)
         )  # array of starting indeces of sliding windows
         Xw = np.arange(s_val, dtype=int)
-        Y = np.zeros((shape[0], len(slid_window_start)), dtype=object)
+        Y = np.zeros((shape[0], len(window_start_indices)), dtype=object)
         signal_view = np.lib.stride_tricks.sliding_window_view(
             cumsum_arr, s_val, axis=1
         )
