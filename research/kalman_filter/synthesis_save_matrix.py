@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 from tqdm import tqdm
 
-from StatTools.filters.symbolic_kalman import (
+from StatTools.experimental.filters.symbolic_kalman import (
     get_sympy_filter_matrix,
     refine_filter_matrix,
 )

@@ -8,7 +8,7 @@ from numpy.typing import NDArray
 
 from StatTools.analysis.dfa import DFA
 from StatTools.experimental.analysis.tools import get_extra_h_dfa
-from StatTools.filters.symbolic_kalman import (
+from StatTools.experimental.filters.symbolic_kalman import (
     get_sympy_filter_matrix,
     refine_filter_matrix,
 )
