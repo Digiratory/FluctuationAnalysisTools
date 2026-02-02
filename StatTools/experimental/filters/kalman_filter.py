@@ -1,14 +1,44 @@
+"""Kalman filter implementation."""
+
+from dataclasses import dataclass
+
 import numpy as np
 from filterpy.kalman import KalmanFilter
 from numpy.typing import NDArray
 
 from StatTools.analysis.dfa import DFA
 from StatTools.experimental.analysis.tools import get_extra_h_dfa
-from StatTools.filters.symbolic_kalman import (
+from StatTools.experimental.filters.symbolic_kalman import (
     get_sympy_filter_matrix,
     refine_filter_matrix,
 )
 from StatTools.generators.kasdin_generator import create_kasdin_generator
+
+
+@dataclass
+class KalmanParams:
+    """
+    Kalman filter parameters.
+
+    Attributes:
+        model_h (float | NDArray[np.float64]): Hurst exponent or fractal model
+            parameter used for automatic transition-matrix construction.
+        noise_var (float | list[float]): Measurement noise variance.
+        kasdin_lenght (int): Length of the signal used by the Kasdin generator
+            when constructing the transition matrix automatically.
+        dt (float): Time interval between measurements. Defaults to 1.
+        order (int | None): System order (state dimension).
+        F (NDArray[np.float64] | None): Custom state-transition matrix. If
+            provided, it is used directly and overrides automatic calculation
+            of `F`.
+    """
+
+    model_h: float | NDArray[np.float64]
+    noise_var: float | list[float]
+    kasdin_length: int
+    dt: float = 1.0
+    order: int | None = None
+    F: NDArray[np.float64] | None = None
 
 
 class FractalKalmanFilter(KalmanFilter):
@@ -27,19 +57,16 @@ class FractalKalmanFilter(KalmanFilter):
     Basic usage:
         ```python
         import numpy as np
-        from StatTools.filters.kalman_filter import FractalKalmanFilter
+        from StatTools.experimental.filters.kalman_filter import FractalKalmanFilter
 
         # Create enhanced Kalman filter
         kf = FractalKalmanFilter(dim_x=2, dim_z=1)
-
-        # Auto-configure using signal characteristics
-        kf.auto_configure(
-            signal=original_signal,
-            noise=noise_signal,
-            dt=0.01,
-            order=2
+        params = KalmanParams(
+            model_h=0.8,
+            noise_var=np.std(noise) ** 2,
+            kasdin_length=len(signal),
         )
-
+        kf.set_parameters(params)
         # Use like standard Kalman filter
         kf.predict()
         kf.update(measurement)
@@ -154,23 +181,38 @@ class FractalKalmanFilter(KalmanFilter):
         """
         # TODO: add Q matrix auto configuration
         self.H[0][0] = 1.0
-        model_h = get_extra_h_dfa(signal)
-        noise_var = np.std(noise) ** 2
-        kasdin_lenght = len(signal)
-        self.set_parameters(model_h, noise_var, kasdin_lenght, dt, order)
+        params = KalmanParams(
+            model_h=get_extra_h_dfa(signal),
+            noise_var=np.std(noise) ** 2,
+            kasdin_length=len(signal),
+            dt=dt,
+            order=order,
+        )
+        self.set_parameters(params)
 
-    def set_parameters(
-        self,
-        model_h,
-        noise_var: float | list[float],
-        kasdin_lenght: int,
-        dt: float = 1,
-        order: int = None,
-    ):
-        if order is None:
-            order = self.dim_x
-        if isinstance(noise_var, list):
+    def set_parameters(self, params: KalmanParams) -> None:
+        """
+        Set Kalman filter parameters (R, F, H) either automatically or manually.
+
+        Parameters:
+            Parameters:
+        params (KalmanParams): Container with all parameter values.
+        """
+        order = params.order if params.order is not None else self.dim_x
+        if isinstance(params.noise_var, list):
             raise NotImplementedError("Only for 1d data")
+
         self.H[0][0] = 1.0
-        self.R = noise_var
-        self.F = self.get_filter_matrix(order, model_h, kasdin_lenght, dt)
+        self.R = params.noise_var
+
+        if params.F is not None:
+            F = np.asarray(params.F, dtype=float)
+            if F.shape != (self.dim_x, self.dim_x):
+                raise ValueError(
+                    f"Provided F has shape {F.shape}, expected {(self.dim_x, self.dim_x)}"
+                )
+            self.F = F
+        else:
+            self.F = self.get_filter_matrix(
+                order, params.model_h, params.kasdin_length, params.dt
+            )
