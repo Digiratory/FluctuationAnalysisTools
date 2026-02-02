@@ -57,19 +57,16 @@ class FractalKalmanFilter(KalmanFilter):
     Basic usage:
         ```python
         import numpy as np
-        from StatTools.filters.kalman_filter import FractalKalmanFilter
+        from StatTools.experimental.filters.kalman_filter import FractalKalmanFilter
 
         # Create enhanced Kalman filter
         kf = FractalKalmanFilter(dim_x=2, dim_z=1)
-
-        # Auto-configure using signal characteristics
-        kf.auto_configure(
-            signal=original_signal,
-            noise=noise_signal,
-            dt=0.01,
-            order=2
+        params = KalmanParams(
+            model_h=0.8,
+            noise_var=np.std(noise) ** 2,
+            kasdin_length=len(signal),
         )
-
+        kf.set_parameters(params)
         # Use like standard Kalman filter
         kf.predict()
         kf.update(measurement)

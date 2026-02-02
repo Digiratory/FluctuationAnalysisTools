@@ -1,5 +1,6 @@
+"""Testing the io module."""
+
 import numpy as np
-import pytest
 from sympy import Matrix
 
 from StatTools.utils import io

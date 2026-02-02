@@ -1,7 +1,10 @@
 import numpy as np
 import pytest
 
-from StatTools.filters.kalman_filter import FractalKalmanFilter, KalmanParams
+from StatTools.experimental.filters.kalman_filter import (
+    FractalKalmanFilter,
+    KalmanParams,
+)
 from StatTools.filters.symbolic_kalman import (
     get_sympy_filter_matrix,
     refine_filter_matrix,
