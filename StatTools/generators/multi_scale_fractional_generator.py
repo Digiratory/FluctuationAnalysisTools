@@ -110,19 +110,14 @@ class MultiScaleFractionalGenerator:
             seed (int or None, optional):
                 Random seed for reproducibility. Default is None.
             correlation_matrix (ndarray or None, optional):
-                Correlation matrix of shape (n_tracks, n_tracks). If None,
-                a default matrix with 0.5 off-diagonal correlation is used.
+                Correlation matrix of shape (n_tracks, n_tracks). If None correlations
+                are not applied. Default is None.
 
         Returns:
-            ndarray: Generated data of shape (length, n_tracks).
+            ndarray: Generated data of shape (n_tracks, length).
         """
         if seed is not None:
             np.random.seed(seed)
-
-        if correlation_matrix is None:
-            correlation_matrix = 0.5 * (
-                np.ones((n_tracks, n_tracks)) - np.eye(n_tracks)
-            ) + np.eye(n_tracks)
 
         segments = []
         prev_value = None
@@ -139,17 +134,23 @@ class MultiScaleFractionalGenerator:
                 prev_value = k_i
             else:
                 k_prev = prev_value / prev_value[0] * k_i[-1]
-                segments.append(k_prev)
+                segments.insert(0, k_prev)
                 prev_value = k_i
-        segments = [k_i] + segments
+        segments.insert(0, k_i)
         impulse_response = np.concatenate(segments)
 
         self.impulse_response = impulse_response
 
         signals = np.random.randn(length, n_tracks)
         for i in range(n_tracks):
-            signals[:, i] = fftconvolve(signals[:, i], impulse_response, mode="same")
-        signals = self._apply_correlation(signals, correlation_matrix)
+            signals[:, i] = fftconvolve(signals[:, i], impulse_response, mode="full")[
+                :length
+            ]
+
+        if correlation_matrix is not None:
+            signals = self._apply_correlation(signals, correlation_matrix)
+        else:
+            signals = signals.T
         self._series = signals
         self._pos = 0
 
