@@ -15,7 +15,8 @@ from StatTools.generators.kasdin_generator import KasdinGenerator
 def test_refine_filter_matrix():
     """Test sympy matrix calculation for 2nd, 3rd order filters."""
     h = 0.8
-    generator = KasdinGenerator(h, length=2 * 14)
+    kasdin_length = 2 * 14
+    generator = KasdinGenerator(h, length=kasdin_length)
     A = generator.get_filter_coefficients()
     for order in range(2, 4):
         number_matrix = refine_filter_matrix(get_sympy_filter_matrix(order), order, A)
@@ -67,11 +68,11 @@ def test_set_parameters_invalid_F_shape():
         kf.set_parameters(params)
 
 
-def test_init_with_cashed_F():
+def test_init_with_provided_F():
     """Test that set parameters with provided F works correctly."""
     kf = FractalKalmanFilter(dim_x=2, dim_z=1)
     params = KalmanParams(
         model_h=0.5, noise_var=0.01, kasdin_length=10, F=np.array([[1, 1], [1, 0]])
     )
     kf.set_parameters(params)
-    assert np.equal(kf.F, np.array([[1, 1], [1, 0]])).all()
+    assert np.array_equal(kf.F, np.array([[1, 1], [1, 0]]))
