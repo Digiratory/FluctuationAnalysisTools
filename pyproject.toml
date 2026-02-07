@@ -39,6 +39,14 @@ dependencies = [
     "pybind11>=2.11.1",
 ]
 
+[project.optional-dependencies]
+cuda11 = [
+    "cupy-cuda11x",
+]
+cuda12 = [
+    "cupy-cuda12x",
+]
+
 [project.urls]
 Repository = "https://github.com/Digiratory/FluctuationAnalysisTools.git"
 Issues = "https://github.com/Digiratory/FluctuationAnalysisTools/issues"
