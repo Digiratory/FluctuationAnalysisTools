@@ -3,7 +3,13 @@ from functools import partial
 import matplotlib.pyplot as plt
 import numpy as np
 
-from StatTools.analysis.utils import analyse_cross_ff, cross_fcn_sloped, ff_params
+from StatTools.analysis.utils import (
+    analyse_cross_ff,
+    analyse_cross_ff_linregress,
+    cross_fcn_sloped,
+    cross_fcn_sloped_linregress,
+    ff_params,
+)
 
 
 def plot_ff(
@@ -87,6 +93,85 @@ def plot_ff(
         )
     else:
         ax.plot(S, fit_func, label=r"$F(S)")
+    if title:
+        ax.set_title(title)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.grid(which="both")
+    ax.legend()
+
+    return ax
+
+
+def plot_ff_linregress(
+    hs: np.ndarray,
+    S: np.ndarray,
+    ff_parameter: ff_params,
+    residuals=None,
+    ax=None,
+    title=None,
+):
+    """Plots the fluctuation function with fitted parameters and crossover points and zero crossover points.
+
+    This function visualizes the fluctuation function data along with the fitted model,
+    including error bars if residuals are provided, and marks the crossover points.
+
+    Args:
+        hs (np.ndarray): The dependent data array, length M.
+        S (np.ndarray): The independent variable array, shape (k, M)
+        ff_parameter (ff_params): Fitted parameters from the fluctuation function analysis.
+        residuals (np.ndarray, optional): Residuals for plotting error bars. Defaults to None.
+        ax (matplotlib.axes.Axes, optional): Matplotlib axis to plot on. If None, creates a new figure. Defaults to None.
+
+    Returns:
+        matplotlib.axes.Axes: The matplotlib axis containing the plot.
+    """
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(8, 6))
+    slopes = [slp.value for slp in ff_parameter.slopes]
+    crossovers = [cross.value for cross in ff_parameter.cross]
+    intercept = ff_parameter.intercept.value
+
+    if len(crossovers) == 0:
+        hurst = ff_parameter.slopes[0].value
+        b = ff_parameter.intercept.value
+        fit_func = 10 ** (hurst * np.log10(S) + b)
+        ax.plot(S, hs.flatten(), ".", label=rf"$H_0(S) \sim {hurst:.2f} \cdot S$")
+        ax.plot(S, fit_func, "-", label="Fit")
+    else:
+        for c in ff_parameter.cross:
+            ax.axvline(
+                c.value, color="k", linestyle="--", label=f"Cross at $S={c.value:.2f}$"
+            )
+
+        ax.plot(S, hs.flatten(), ".", label="Data")
+
+        all_values = (
+            [np.log10(c) for c in crossovers]
+            + slopes
+            + [r.value for r in ff_parameter.ridigity]
+        )
+        fit_func = 10 ** cross_fcn_sloped_linregress(
+            np.log10(S),
+            intercept,
+            *all_values,
+            crossover_amount=len(crossovers),
+            s=S,
+            hs=hs.flatten(),
+        )
+        ax.plot(S, fit_func, "r-", linewidth=2, label="Fit")
+
+    if residuals is not None:
+        ax.errorbar(
+            S,
+            10 ** np.interp(np.log10(S), np.log10(S), np.log10(hs.flatten())),
+            fmt="g--",
+            capsize=7,
+            yerr=2 * np.std(residuals, axis=0),
+            label=r"$F(S) \pm 2\sigma$",
+        )
+
     if title:
         ax.set_title(title)
     ax.set_xscale("log")

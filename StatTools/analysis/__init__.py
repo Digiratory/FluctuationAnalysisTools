@@ -12,8 +12,10 @@ from .support_ff import (
 )
 from .utils import (
     analyse_cross_ff,
+    analyse_cross_ff_linregress,
     analyse_zero_cross_ff,
     cross_fcn_sloped,
+    cross_fcn_sloped_linregress,
     ff_params,
     var_estimation,
 )
