@@ -1,4 +1,3 @@
-import itertools
 import multiprocessing as mp
 from functools import partial
 from itertools import product
