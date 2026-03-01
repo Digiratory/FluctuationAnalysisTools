@@ -75,7 +75,7 @@ def _bma_worker(
     end = t_indices
 
     # Array for result
-    window_sums = np.empty((cs.shape[0], len(t_indices)), dtype=cs.dtype)
+    window_sums = np.zeros((cs.shape[0], len(t_indices)), dtype=cs.dtype)
 
     # Masks
     mask_start_le_zero = start <= 0
