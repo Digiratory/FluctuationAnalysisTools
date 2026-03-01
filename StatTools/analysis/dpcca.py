@@ -9,8 +9,6 @@ from typing import Union
 
 import numpy as np
 
-from StatTools.auxiliary import SharedBuffer
-
 
 def _covariation_single_signal(signal: np.ndarray):
     """
