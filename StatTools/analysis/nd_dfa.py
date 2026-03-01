@@ -1,6 +1,5 @@
 import multiprocessing as mp
 from functools import partial
-from itertools import product
 
 import numpy as np
 
