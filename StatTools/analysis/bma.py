@@ -222,7 +222,7 @@ def bma(
                 "All input scale values are larger than series length / 4!"
             )
         if len(s) != init_s_len:
-            warnings.warn(f"\tBMA warning: only following scales are in use: {s}")
+            warnings.warn(f"BMA warning: only following scales are in use: {s}")
     elif isinstance(s, (float, int)):
         if s > L / 4:
             raise ValueError("Cannot use scale > length / 4")
