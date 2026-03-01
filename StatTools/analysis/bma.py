@@ -216,7 +216,7 @@ def bma(
     if isinstance(s, Iterable) and not isinstance(s, (str, bytes)):
         s = list(s)
         init_s_len = len(s)
-        s = list(filter(lambda x: x <= L / 4, s))
+        s = [x for x in s if x <= L / 4]
         if len(s) < 1:
             raise ValueError(
                 "All input scale values are larger than series length / 4!"
