@@ -1,3 +1,5 @@
+import numpy as np
+
 from .bma import bma
 from .dpcca import dpcca
 from .fa import fa
@@ -21,3 +23,27 @@ from .utils import (
     ff_params,
     var_estimation,
 )
+
+
+def analyse_ff(
+    hs: np.ndarray,
+    s: np.ndarray,
+    crossover_amount: int,
+    method: str = "linregress",
+    **kwargs,
+) -> tuple[ff_params, np.ndarray]:
+    method = method.lower()
+    if method == "relu_analyse":
+        return analyse_cross_ff(hs=hs, S=s, crossover_amount=crossover_amount)
+    elif method == "linregress":
+        return analyse_cross_ff_linregress(
+            hs=hs, S=s, crossover_amount=crossover_amount
+        )
+    else:
+        raise ValueError(
+            f"Unknown method for analyse: {method}. Available methods: 'relu_analyse', 'linregress'"
+        )
+
+
+if __name__ == "__main__":
+    pass
