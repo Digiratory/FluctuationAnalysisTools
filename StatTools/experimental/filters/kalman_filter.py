@@ -33,11 +33,11 @@ class KalmanParams:
             of `F`.
     """
 
-    model_h: float | NDArray[np.float64]
     noise_var: float | list[float]
     kasdin_length: int
     dt: float = 1.0
     order: int | None = None
+    model_h: float | NDArray[np.float64] | None = None
     F: NDArray[np.float64] | None = None
 
 
@@ -182,11 +182,11 @@ class FractalKalmanFilter(KalmanFilter):
         # TODO: add Q matrix auto configuration
         self.H[0][0] = 1.0
         params = KalmanParams(
-            model_h=get_extra_h_dfa(signal),
             noise_var=np.std(noise) ** 2,
             kasdin_length=len(signal),
             dt=dt,
             order=order,
+            model_h=get_extra_h_dfa(signal),
         )
         self.set_parameters(params)
 
@@ -213,6 +213,7 @@ class FractalKalmanFilter(KalmanFilter):
                 )
             self.F = F
         else:
-            self.F = self.get_filter_matrix(
-                order, params.model_h, params.kasdin_length, params.dt
-            )
+            if params.model_h is not None:
+                self.F = self.get_filter_matrix(
+                    order, params.model_h, params.kasdin_length, params.dt
+                )
