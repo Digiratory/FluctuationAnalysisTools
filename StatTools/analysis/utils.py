@@ -79,8 +79,6 @@ def cross_fcn_sloped(x, y_0, *args, crossover_amount: int):
         if index == slopes_num - 1:
             right_c = np.inf
             right_r = np.inf
-            # right_c = None
-            # right_r = None
         else:
             right_c = C[index]
             right_r = R[index]
@@ -265,6 +263,53 @@ def analyse_zero_cross_ff(
     )
 
 
+def ff_base_approx_synt_data(
+    x: np.ndarray,
+    slope1: float,
+    slope2: float,
+    r1: float,
+    r2: float,
+    c1: float,
+    c2: float,
+) -> np.ndarray:
+    if np.isinf(c1):
+        approx_data = slope2 * x
+        r_contrib = 0.5 * (1 + np.tanh((x - c2) / r2))
+        return r_contrib * approx_data
+    if np.isinf(c2):
+        approx_data = slope1 * x
+        r_contrib = 0.5 * (1 - np.tanh((x - c1) / r1))
+        return approx_data * r_contrib
+    approx_data_left = slope1 * x
+    r_contrib_left = 0.5 * (1 - np.tanh((x - c1) / r1))
+    approx_data_right = slope2 * x
+    r_contrib_right = 0.5 * (1 + np.tanh((x - c2) / r2))
+    return (
+        approx_data_left * r_contrib_left
+        + (1 - r_contrib_left) * approx_data_right * r_contrib_right
+    )
+
+
+def cross_fcn_sloped_synt_data(x, y_0, *args, crossover_amount: int):
+    crossovers = crossover_amount
+    slopes_num, r_count = get_number_parameter_by_number_crossovers(crossover_amount)
+    c = args[:crossovers]
+    slope = args[crossovers : crossovers + slopes_num]
+    r = args[crossovers + slopes_num :]
+    res = np.zeros_like(x, dtype=float)
+    if crossovers == 0:
+        res = slope[0] * x
+    else:
+        res = slope[0] * x
+        for i in range(crossovers):
+            r_contrib = 0.5 * (1 + np.tanh((x - c[i]) / r[i]))
+            res += r_contrib * (slope[i + 1] - slope[i]) * x
+    if len(x) > 0:
+        bias = res[0] - y_0
+        res = res - bias  # Normalization for initial values come from 0
+    return res
+
+
 def ff_base_approximation_linregress(
     x: np.ndarray,
     r1: float,
@@ -351,8 +396,6 @@ def cross_fcn_sloped_linregress(
         if index == slopes_num - 1:
             right_c = np.inf
             right_r = 1
-            # right_c = None
-            # right_r = None
         else:
             right_c = C[index]
             right_r = R[index]
@@ -370,52 +413,80 @@ def cross_fcn_sloped_linregress(
     return y_0 + slope_fcn - fcn_bias
 
 
-def find_optimal_cross(hs, s, min_cross_data_restr=0.2, max_cross_data_restr=0.8):
+def find_optimal_cross(
+    hs, s, crossover_amount=1, min_cross_data_restr=0.2, max_cross_data_restr=0.8
+):
     log_s = np.log10(s)
     log_hs = np.log10(hs.flatten())
     cross_points = len(s)
     min_idx_cross = max(4, int(cross_points * min_cross_data_restr))
     max_idx_cross = min(len(s) - 4, int(cross_points * max_cross_data_restr))
 
-    errors = []
-    cross_vars = []
-    for cross_idx in range(min_idx_cross, max_idx_cross):
-        res_left = stats.linregress(log_s[:cross_idx], log_hs[:cross_idx])
-        res_right = stats.linregress(log_s[cross_idx:], log_hs[cross_idx:])
-        left_pred = res_left.slope * log_s[:cross_idx] + res_left.intercept
-        right_pred = res_right.slope * log_s[cross_idx:] + res_right.intercept
-        err_left = np.sum((log_hs[:cross_idx] - left_pred) ** 2)
-        err_right = np.sum((log_hs[cross_idx:] - right_pred) ** 2)
-        err = err_left + err_right
-        errors.append(err)
-        cross_vars.append(cross_idx)
+    if crossover_amount == 1:
+        errors = []
+        cross_vars = []
+        for cross_idx in range(min_idx_cross, max_idx_cross):
+            res_left = stats.linregress(log_s[:cross_idx], log_hs[:cross_idx])
+            res_right = stats.linregress(log_s[cross_idx:], log_hs[cross_idx:])
+            left_pred = res_left.slope * log_s[:cross_idx] + res_left.intercept
+            right_pred = res_right.slope * log_s[cross_idx:] + res_right.intercept
+            err_left = np.sum((log_hs[:cross_idx] - left_pred) ** 2)
+            err_right = np.sum((log_hs[cross_idx:] - right_pred) ** 2)
+            err = err_left + err_right
+            errors.append(err)
+            cross_vars.append(cross_idx)
 
-    best_idx_error = np.argmin(errors)
-    best_cross_idx = cross_vars[best_idx_error]
-    best_cross_S = s[best_cross_idx]
-    res_left = stats.linregress(log_s[:best_cross_idx], log_hs[:best_cross_idx])
-    res_right = stats.linregress(log_s[best_cross_idx:], log_hs[best_cross_idx:])
-    r_diff = np.abs(
-        (res_right.slope * log_s + res_right.intercept)
-        - (res_left.slope * log_s + res_left.intercept)
-    )
-    r_bounds = 0.16 * np.max(r_diff)
-    transit = r_diff < r_bounds
-    transit_idx = np.where(transit)[0]
-    if len(transit_idx) > 1:
-        r_estimate = (log_s[transit_idx[-1]] - log_s[transit_idx[0]]) / 2
-        r_estimate = max(0.1, min(r_estimate, 2))
+        best_idx_error = np.argmin(errors)
+        best_cross_idx = cross_vars[best_idx_error]
+        best_cross_S = s[best_cross_idx]
+        res_left = stats.linregress(log_s[:best_cross_idx], log_hs[:best_cross_idx])
+        res_right = stats.linregress(log_s[best_cross_idx:], log_hs[best_cross_idx:])
+        r_diff = np.abs(
+            (res_right.slope * log_s + res_right.intercept)
+            - (res_left.slope * log_s + res_left.intercept)
+        )
+        r_bounds = 0.16 * np.max(r_diff)
+        transit = r_diff < r_bounds
+        transit_idx = np.where(transit)[0]
+        if len(transit_idx) > 1:
+            r_estimate = (log_s[transit_idx[-1]] - log_s[transit_idx[0]]) / 2
+            r_estimate = max(0.1, min(r_estimate, 2))
+        else:
+            r_estimate = 0.5
+
+        return {
+            "cross": [best_cross_S],
+            "slopes": [float(res_left.slope), float(res_right.slope)],
+            "intercept": float(res_left.intercept),
+            "r": [float(r_estimate)],
+        }
+
     else:
-        r_estimate = 0.5
+        crossover_points = np.linspace(
+            min_idx_cross, max_idx_cross, crossover_amount + 2
+        ).astype(int)[1:-1]
+        crossovers = [s[index] for index in crossover_points]
+        slopes = []
+        r = [0.5] * crossover_amount
+        res_first_value = stats.linregress(
+            log_s[: crossover_points[0]], log_hs[: crossover_points[0]]
+        )
+        slopes.append(float(res_first_value.slope))
+        intercept = float(res_first_value.intercept)
 
-    return {
-        "cross": best_cross_S,
-        "slope_left": res_left.slope,
-        "intercept_left": res_left.intercept,
-        "slope_right": res_right.slope,
-        "intercept_right": res_right.intercept,
-        "r": r_estimate,
-    }
+        for i in range(len(crossover_points) - 1):
+            res_value = stats.linregress(
+                log_s[crossover_points[i] : crossover_points[i + 1]],
+                log_hs[crossover_points[i] : crossover_points[i + 1]],
+            )
+            slopes.append(float(res_value.slope))
+
+        res_last_value = stats.linregress(
+            log_s[crossover_points[-1] :], log_hs[crossover_points[-1] :]
+        )
+        slopes.append(float(res_last_value.slope))
+
+        return {"cross": crossovers, "slopes": slopes, "intercept": intercept, "r": r}
 
 
 def analyse_cross_ff_linregress(
@@ -452,6 +523,10 @@ def analyse_cross_ff_linregress(
     """
 
     # Initialization of optimization procedure
+    if hs.ndim == 1:
+        hs = hs.reshape(1, -1)
+    if crossover_amount > 1:
+        raise ValueError("values of lags can't be more then 1")
     s = np.repeat(S[:, np.newaxis], hs.shape[0], 1).T
     change_cross_value = partial(
         cross_fcn_sloped_linregress, crossover_amount=crossover_amount
@@ -493,19 +568,19 @@ def analyse_cross_ff_linregress(
         for k in range(crossover_amount)
     ]
 
-    init_params = find_optimal_cross(hs, S)
+    init_params = find_optimal_cross(hs, S, crossover_amount=crossover_amount)
     p0 = (
-        [init_params["intercept_left"]]
-        + [np.log10(init_params["cross"])]
-        + [init_params["slope_left"], init_params["slope_right"]]
-        + [init_params["r"]]
+        [init_params["intercept"]]
+        + [np.log10(c) for c in init_params["cross"]]
+        + init_params["slopes"]
+        + init_params["r"]
     )
 
-    def fit_func(x, *params):
+    def fit_func(x, *init_params):
         return cross_fcn_sloped_linregress(
             x,
-            params[0],
-            *params[1:],
+            init_params[0],
+            *init_params[1:],
             crossover_amount=crossover_amount,
             s=S,
             hs=hs.flatten()

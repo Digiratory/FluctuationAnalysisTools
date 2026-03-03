@@ -16,6 +16,8 @@ from .utils import (
     analyse_zero_cross_ff,
     cross_fcn_sloped,
     cross_fcn_sloped_linregress,
+    cross_fcn_sloped_synt_data,
+    ff_base_approx_synt_data,
     ff_params,
     var_estimation,
 )
