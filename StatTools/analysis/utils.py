@@ -350,7 +350,7 @@ def ff_base_approximation_linregress(
     cross_index_2 = max(4, min(cross_index_2, len(log_s) - 4))
     res_right = stats.linregress(log_s[cross_index_2:], log_hs[cross_index_2:])
     approx_data_right = res_right.slope * x + res_right.intercept
-    r_contrib_right = 0.5 * (1 - np.tanh((x - c2) / r2))
+    r_contrib_right = 0.5 * (1 + np.tanh((x - c2) / r2))
 
     return (
         r_contrib_left * approx_data_left
