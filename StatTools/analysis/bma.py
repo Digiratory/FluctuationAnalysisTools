@@ -75,7 +75,7 @@ def _bma_worker(
     end = t_indices
 
     # Array for result
-    window_sums = np.empty((cs.shape[0], len(t_indices)), dtype=cs.dtype)
+    window_sums = np.zeros((cs.shape[0], len(t_indices)), dtype=cs.dtype)
 
     # Masks
     mask_start_le_zero = start <= 0
@@ -216,13 +216,13 @@ def bma(
     if isinstance(s, Iterable) and not isinstance(s, (str, bytes)):
         s = list(s)
         init_s_len = len(s)
-        s = list(filter(lambda x: x <= L / 4, s))
+        s = [x for x in s if x <= L / 4]
         if len(s) < 1:
             raise ValueError(
                 "All input scale values are larger than series length / 4!"
             )
         if len(s) != init_s_len:
-            warnings.warn(f"\tBMA warning: only following scales are in use: {s}")
+            warnings.warn(f"BMA warning: only following scales are in use: {s}")
     elif isinstance(s, (float, int)):
         if s > L / 4:
             raise ValueError("Cannot use scale > length / 4")
