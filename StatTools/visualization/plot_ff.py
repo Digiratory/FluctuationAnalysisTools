@@ -7,7 +7,6 @@ from StatTools.analysis.utils import (
     analyse_cross_ff,
     analyse_cross_ff_linregress,
     cross_fcn_sloped,
-    cross_fcn_sloped_linregress,
     ff_params,
 )
 
@@ -16,7 +15,6 @@ def plot_ff(
     hs: np.ndarray,
     S: np.ndarray,
     ff_parameter: ff_params,
-    linregress_approx=False,
     residuals=None,
     ax=None,
     title=None,
@@ -41,8 +39,8 @@ def plot_ff(
         fig, ax = plt.subplots(figsize=(30, 10))
     slopes = [slp.value for slp in ff_parameter.slopes]
     crossovers = [cross.value for cross in ff_parameter.cross]
-    R = [r.value for r in ff_parameter.ridigity]
-    intercept = (ff_parameter.intercept.value,)
+    R = [1]
+    intercept = ff_parameter.intercept.value
     if len(crossovers) == 0:
         hurst = ff_parameter.slopes[0].value
         b = ff_parameter.intercept.value
@@ -60,17 +58,9 @@ def plot_ff(
             )
     else:
         all_values = [np.log10(c) for c in crossovers] + slopes + R
-        fit_func_assimptots = 10 ** cross_fcn_sloped_linregress(
-            np.log10(S),
-            intercept,
-            *all_values,
-            crossover_amount=len(crossovers),
-            s=S,
-            hs=hs.flatten(),
-        )
         fit_func = 10 ** cross_fcn_sloped(
             np.log10(S),
-            intercept,
+            0,
             *all_values,
             crossover_amount=len(crossovers),
         )
@@ -91,30 +81,18 @@ def plot_ff(
             ax.axvline(
                 c.value, color="k", linestyle="--", label=f"Cross at $S={c.value:.2f}$"
             )
-    if linregress_approx == True:
-        if residuals is not None:
-            ax.errorbar(
-                S,
-                fit_func_assimptots,
-                fmt="g--",
-                capsize=7,
-                yerr=2 * np.std(residuals, axis=0),
-                label=r"$F(S) \pm 2\sigma$",
-            )
-        else:
-            ax.plot(S, fit_func_assimptots, label=r"$F(S)")
+
+    if residuals is not None:
+        ax.errorbar(
+            S,
+            fit_func,
+            fmt="g--",
+            capsize=7,
+            yerr=2 * np.std(residuals, axis=0),
+            label=r"$F(S) \pm 2\sigma$",
+        )
     else:
-        if residuals is not None:
-            ax.errorbar(
-                S,
-                fit_func,
-                fmt="g--",
-                capsize=7,
-                yerr=2 * np.std(residuals, axis=0),
-                label=r"$F(S) \pm 2\sigma$",
-            )
-        else:
-            ax.plot(S, fit_func, label=r"$F(S)")
+        ax.plot(S, fit_func, label=r"$F(S)")
     if title:
         ax.set_title(title)
     ax.set_xscale("log")

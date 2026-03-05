@@ -17,9 +17,6 @@ from .utils import (
     analyse_cross_ff_linregress,
     analyse_zero_cross_ff,
     cross_fcn_sloped,
-    cross_fcn_sloped_linregress,
-    cross_fcn_sloped_synt_data,
-    ff_base_approx_synt_data,
     ff_params,
     var_estimation,
 )
@@ -37,7 +34,7 @@ def analyse_ff(
         return analyse_cross_ff(hs=hs, S=s, crossover_amount=crossover_amount)
     elif method == "linregress":
         return analyse_cross_ff_linregress(
-            hs=hs, S=s, crossover_amount=crossover_amount
+            hs=hs, s=s, crossover_amount=crossover_amount
         )
     else:
         raise ValueError(
