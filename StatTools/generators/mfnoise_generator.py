@@ -139,8 +139,6 @@ def mfnoise(
     # Calculate spectral exponents
     alpha = [2 * h + 1 for h in hurst]
     length += 1
-    # Generate frequency array for FFT
-    freqs = np.fft.fftfreq(length, d=1.0)
 
     # Create spectral density with piecewise power law
     S = _calculate_spectral_density(length, hurst, crossover_points)
