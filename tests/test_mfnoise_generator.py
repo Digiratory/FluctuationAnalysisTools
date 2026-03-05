@@ -2,7 +2,6 @@
 
 import numpy as np
 import pytest
-from scipy import signal, stats
 
 from StatTools.generators.mfnoise_generator import _calculate_spectral_density, mfnoise
 
