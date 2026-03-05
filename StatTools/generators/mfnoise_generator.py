@@ -137,7 +137,6 @@ def mfnoise(
         )
 
     # Calculate spectral exponents
-    alpha = [2 * h + 1 for h in hurst]
     length += 1
 
     # Create spectral density with piecewise power law
