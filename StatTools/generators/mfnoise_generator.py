@@ -173,6 +173,8 @@ def mfnoise(
     else:
         signals = signal.reshape(1, -1)
 
+    signals = np.diff(signals, axis=1)
+
     # Normalize if requested
     if normalize:
         for i in range(signals.shape[0]):
@@ -184,4 +186,4 @@ def mfnoise(
                 signals[i] = signals[i] - mean_val
 
     # Convert to fractional noise by taking differences
-    return np.diff(signals, axis=1)
+    return signals
