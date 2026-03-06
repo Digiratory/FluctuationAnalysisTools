@@ -286,6 +286,8 @@ def analyse_cross_ff_linregress(
         hs = hs.reshape(1, -1)
     elif hs.ndim > 2:
         raise ValueError("hs must be 1D or 2D array")
+    if len(s) < min_window_size:
+        raise ValueError("s is too short for regression")
 
     # Handle case where s is 1D but hs is 2D - duplicate s to match dimensions
     if s.ndim == 1 and hs.ndim == 2:
@@ -337,11 +339,6 @@ def analyse_cross_ff_linregress(
         s[0, best_cross_idx] - s[0, best_cross_idx - 1]
     )
 
-    # Calculate crossover as intersection of linear functions
-    # x_intersect = (res_after.intercept - res_before.intercept) / (res_before.slope - res_after.slope)
-
-    # # Convert back from log10 space
-    # crossover = 10**x_intersect
     # Create fit model
     fit_model = np.zeros_like(hs)
     fit_model[:, :best_cross_idx] = (
