@@ -15,7 +15,7 @@ def plot_ff(
     hs: np.ndarray,
     S: np.ndarray,
     ff_parameter: ff_params,
-    residuals=None,
+    residuals: np.ndarray | None = None,
     ax=None,
     title=None,
 ):
@@ -34,13 +34,17 @@ def plot_ff(
     Returns:
         matplotlib.axes.Axes: The matplotlib axis containing the plot.
     """
+    if residuals is not None and hs.shape != residuals.shape:
+        raise ValueError(
+            f"residuals and hs must have compatible dimensions. Got residuals.shape={residuals.shape}, hs.shape={hs.shape}"
+        )
 
     if ax is None:
         fig, ax = plt.subplots(figsize=(30, 10))
     slopes = [slp.value for slp in ff_parameter.slopes]
     crossovers = [cross.value for cross in ff_parameter.cross]
-    R = [1]
-    intercept = ff_parameter.intercept.value
+    R = [r.value for r in ff_parameter.ridigity]
+    intercept = (ff_parameter.intercept.value,)
     if len(crossovers) == 0:
         hurst = ff_parameter.slopes[0].value
         b = ff_parameter.intercept.value
@@ -60,7 +64,7 @@ def plot_ff(
         all_values = [np.log10(c) for c in crossovers] + slopes + R
         fit_func = 10 ** cross_fcn_sloped(
             np.log10(S),
-            0,
+            intercept,
             *all_values,
             crossover_amount=len(crossovers),
         )

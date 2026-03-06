@@ -264,48 +264,108 @@ def analyse_zero_cross_ff(
 
 
 def analyse_cross_ff_linregress(
-    hs: np.ndarray, s: np.ndarray, crossover_amount=1
+    hs: np.ndarray,
+    s: np.ndarray,
+    crossover_amount: int = 1,
+    min_window_size: int = 4,
 ) -> tuple[ff_params, np.ndarray]:
+    """
+    Analyze fluctuation function with linear regression and crossover detection.
+
+    Args:
+        hs: Fluctuation values array
+        s: Scale values array
+        crossover_amount: Number of crossovers to detect (unused parameter, must be 1)
+        min_window_size: Minimum window size for regression
+
+    Returns:
+        Tuple of (parameters, residuals)
+    """
+    # Input validation and preprocessing
     if hs.ndim == 1:
-        hs.reshape(1, -1)
-    hs_flat = hs.flatten()
-    errors = []
-    for cross in range(4, len(s) - 4):
-        data_before_cross = stats.linregress(
-            np.log10(s[:cross]), np.log10(hs_flat[:cross])
+        hs = hs.reshape(1, -1)
+    elif hs.ndim > 2:
+        raise ValueError("hs must be 1D or 2D array")
+
+    # Handle case where s is 1D but hs is 2D - duplicate s to match dimensions
+    if s.ndim == 1 and hs.ndim == 2:
+        s = np.repeat(s[np.newaxis, :], hs.shape[0], axis=0)
+    elif s.ndim == 1:
+        s = s.reshape(1, -1)
+
+    if s.shape != hs.shape:
+        raise ValueError(
+            f"s and hs must have compatible dimensions. Got s.shape={s.shape}, hs.shape={hs.shape}"
         )
-        data_after_cross = stats.linregress(
-            np.log10(s[cross:]), np.log10(hs_flat[cross:])
+
+    # Check if we have enough data points for crossover analysis
+    # We need at least min_window_size points before and after any crossover point
+    if s.shape[1] < 2 * min_window_size + 1:
+        raise ValueError(
+            f"Array too short for min_window_size={min_window_size}. Need at least {2 * min_window_size + 1} points, got {s.shape[0]}"
         )
-        errors.append(data_before_cross.stderr + data_after_cross.stderr)
-    cross_idx = np.argmin(np.array(errors)) + 4
-    crossover = s[cross_idx]
-    res_before_cross = stats.linregress(
-        np.log10(s[:cross_idx]), np.log10(hs_flat[:cross_idx])
+
+    cross_indices = np.arange(min_window_size, s.shape[1] - min_window_size)
+    errors = np.zeros(len(cross_indices))
+
+    for i, cross in enumerate(cross_indices):
+        data_before = stats.linregress(
+            np.log10(s[:, :cross].flatten()),
+            np.log10(hs[:, :cross].flatten()),
+        )
+
+        data_after = stats.linregress(
+            np.log10(s[:, cross:].flatten()),
+            np.log10(hs[:, cross:].flatten()),
+        )
+        errors[i] = data_before.stderr + data_after.stderr
+
+    best_cross_idx = cross_indices[np.argmin(errors)]
+
+    # Fit before and after crossover
+    res_before = stats.linregress(
+        np.log10(s[:, :best_cross_idx].flatten()),
+        np.log10(hs[:, :best_cross_idx].flatten()),
     )
-    res_after_cross = stats.linregress(
-        np.log10(s[cross_idx:]), np.log10(hs_flat[cross_idx:])
+    res_after = stats.linregress(
+        np.log10(s[:, best_cross_idx:].flatten()),
+        np.log10(hs[:, best_cross_idx:].flatten()),
     )
-    slopes = [res_before_cross.slope, res_after_cross.slope]
-    fit_model = np.zeros_like(hs_flat)
-    fit_model[:cross_idx] = (
-        res_before_cross.slope * np.log10(s[:cross_idx]) + res_before_cross.intercept
+    crossover_shift = 0.5  # res_before.stderr / \
+    # (res_before.stderr + res_after.stderr)
+    crossover = s[0, best_cross_idx - 1] + crossover_shift * (
+        s[0, best_cross_idx - 1] - s[0, best_cross_idx]
     )
-    fit_model[cross_idx:] = (
-        res_after_cross.slope * np.log10(s[cross_idx:]) + res_after_cross.intercept
+
+    # Calculate crossover as intersection of linear functions
+    # x_intersect = (res_after.intercept - res_before.intercept) / (res_before.slope - res_after.slope)
+
+    # # Convert back from log10 space
+    # crossover = 10**x_intersect
+    # Create fit model
+    fit_model = np.zeros_like(hs)
+    fit_model[:, :best_cross_idx] = (
+        res_before.slope * np.log10(s[:, :best_cross_idx]) + res_before.intercept
     )
-    residuals = fit_model - np.log10(hs_flat)
+    fit_model[:, best_cross_idx:] = (
+        res_after.slope * np.log10(s[:, best_cross_idx:]) + res_after.intercept
+    )
+
+    # Return residuals in linear space for consistency
+    residuals = 10 ** (fit_model - hs)
+
     return (
         ff_params(
             intercept=var_estimation(
-                value=res_before_cross.intercept, stderr=res_before_cross.stderr
+                value=np.mean(fit_model[:, 0]), stderr=np.std(fit_model[:, 0])
             ),
             cross=[var_estimation(value=crossover, stderr=0)],
             slopes=[
-                var_estimation(value=slopes[0], stderr=res_before_cross.stderr),
-                var_estimation(value=slopes[1], stderr=res_after_cross.stderr),
+                var_estimation(value=res_before.slope, stderr=res_before.stderr),
+                var_estimation(value=res_after.slope, stderr=res_after.stderr),
             ],
-            ridigity=[var_estimation(value=0, stderr=0)],
+            # Consider fixing spelling
+            ridigity=[var_estimation(value=1.0, stderr=0)],
         ),
         residuals,
     )
