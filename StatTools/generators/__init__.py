@@ -6,6 +6,7 @@ import numpy as np
 # Import the individual generators
 from .kasdin_generator import create_kasdin_generator
 from .lbfbm_generator import LBFBmGenerator
+from .mfnoise_generator import mfnoise
 
 
 def generate_fbn(

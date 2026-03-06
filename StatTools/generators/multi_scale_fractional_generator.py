@@ -34,6 +34,8 @@ class MultiScaleFractionalGenerator:
     filters white noise via FFT convolution, and optionally
     imposes cross-track correlations.
 
+    Based on Mandelbrot, Benoit B. and J.W. van Ness approach.
+
     Args:
         h_list (list[float]):
             List of Hurst exponents (spectral slopes). Must contain at least two
