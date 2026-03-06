@@ -282,6 +282,8 @@ def analyse_cross_ff_linregress(
         Tuple of (parameters, residuals)
     """
     # Input validation and preprocessing
+    if crossover_amount != 1:
+        raise ValueError("Number of crossovers should be equals 1")
     if hs.ndim == 1:
         hs = hs.reshape(1, -1)
     elif hs.ndim > 2:
