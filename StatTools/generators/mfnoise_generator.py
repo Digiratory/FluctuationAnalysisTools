@@ -18,7 +18,7 @@ def _calculate_spectral_density(
         np.ndarray: Spectral density array of shape (length,).
     """
     # Calculate spectral exponents
-    alpha = [2 * h + 1 for h in hurst[::-1]]
+    beta = [2 * h + 1 for h in hurst[::-1]]
 
     # Generate frequency array for FFT
     freqs = np.fft.fftfreq(length, d=1.0)
@@ -32,7 +32,7 @@ def _calculate_spectral_density(
     # Build piecewise spectral density
     if len(hurst) == 1:
         # Single Hurst exponent case
-        S[1:] = np.abs(freqs[1:]) ** (-alpha[0])
+        S[1:] = np.abs(freqs[1:]) ** (-beta[0])
     else:
         # Multiple Hurst exponents with crossover points
         # Convert crossover points to frequencies
@@ -42,7 +42,7 @@ def _calculate_spectral_density(
 
         # Start with first segment
         mask = np.abs(freqs) <= crossover_freqs[0]
-        S[mask & (freqs != 0)] = np.abs(freqs[mask & (freqs != 0)]) ** (-alpha[0])
+        S[mask & (freqs != 0)] = np.abs(freqs[mask & (freqs != 0)]) ** (-beta[0])
 
         # Add remaining segments with continuity at crossover points
         for i in range(1, len(hurst)):
@@ -61,17 +61,17 @@ def _calculate_spectral_density(
                     if np.any(prev_mask & (freqs != 0)):
                         # Get the value at the boundary
                         boundary_freq = prev_cf
-                        boundary_value = boundary_freq ** (-alpha[i - 1])
+                        boundary_value = boundary_freq ** (-beta[i - 1])
 
                         # Apply power law for this segment, scaled to match at boundary
                         segment_freqs = np.abs(freqs[mask & (freqs != 0)])
                         S[mask & (freqs != 0)] = boundary_value * (
                             segment_freqs / boundary_freq
-                        ) ** (-alpha[i])
+                        ) ** (-beta[i])
                 else:
                     # First segment after DC
                     S[mask & (freqs != 0)] = np.abs(freqs[mask & (freqs != 0)]) ** (
-                        -alpha[i]
+                        -beta[i]
                     )
             else:
                 # Last segment extends to Nyquist frequency
@@ -79,12 +79,12 @@ def _calculate_spectral_density(
 
                 # Find the spectral value at the start of this segment
                 prev_cf = crossover_freqs[i - 1]
-                boundary_value = prev_cf ** (-alpha[i - 1])
+                boundary_value = prev_cf ** (-beta[i - 1])
 
                 # Apply power law for this segment, scaled to match at boundary
                 segment_freqs = np.abs(freqs[mask & (freqs != 0)])
                 S[mask & (freqs != 0)] = boundary_value * (segment_freqs / prev_cf) ** (
-                    -alpha[i]
+                    -beta[i]
                 )
 
     # Remove any remaining infinities or NaNs
