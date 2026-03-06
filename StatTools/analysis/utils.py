@@ -334,7 +334,7 @@ def analyse_cross_ff_linregress(
     crossover_shift = 0.5  # res_before.stderr / \
     # (res_before.stderr + res_after.stderr)
     crossover = s[0, best_cross_idx - 1] + crossover_shift * (
-        s[0, best_cross_idx - 1] - s[0, best_cross_idx]
+        s[0, best_cross_idx] - s[0, best_cross_idx - 1]
     )
 
     # Calculate crossover as intersection of linear functions
