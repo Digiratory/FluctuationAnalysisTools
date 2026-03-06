@@ -286,8 +286,6 @@ def analyse_cross_ff_linregress(
         hs = hs.reshape(1, -1)
     elif hs.ndim > 2:
         raise ValueError("hs must be 1D or 2D array")
-    if len(s) < min_window_size:
-        raise ValueError("s is too short for regression")
 
     # Handle case where s is 1D but hs is 2D - duplicate s to match dimensions
     if s.ndim == 1 and hs.ndim == 2:
