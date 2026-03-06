@@ -352,7 +352,7 @@ def analyse_cross_ff_linregress(
     )
 
     # Return residuals in linear space for consistency
-    residuals = 10 ** (fit_model - hs)
+    residuals = 10 ** (fit_model - np.log10(hs))
 
     return (
         ff_params(

@@ -40,7 +40,3 @@ def analyse_ff(
         raise ValueError(
             f"Unknown method for analyse: {method}. Available methods: 'relu_analyse', 'linregress'"
         )
-
-
-if __name__ == "__main__":
-    pass
