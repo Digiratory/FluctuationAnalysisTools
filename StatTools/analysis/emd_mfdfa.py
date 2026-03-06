@@ -291,34 +291,3 @@ def _mfdfa_core(
             h_q[q_idx] = coeffs[0]
 
     return h_q, Fq
-
-
-# Convenience function for simple Hurst exponent estimation
-def estimate_hurst_emd(signal: np.ndarray, degree: int = 1, **kwargs) -> float:
-    """
-    Convenience function to estimate Hurst exponent using EMD-based MFDFA.
-
-    Returns the Hurst exponent at q=2, which corresponds to standard DFA.
-
-    Args:
-        signal: Input time series
-        degree: Polynomial degree for detrending
-        **kwargs: Additional arguments passed to emd_mfdfa()
-
-    Returns:
-        float: Estimated Hurst exponent
-
-    Example:
-        ```python
-        from StatTools.analysis.emd_mfdfa import estimate_hurst_emd
-
-        signal = ...  # Your signal here
-        H = estimate_hurst_emd(signal)
-        print(f"Hurst exponent: {H:.3f}")
-        ```
-    """
-    q_vals, h_q, _ = emd_mfdfa(signal, degree=degree, **kwargs)
-
-    # Find h at q=2
-    q2_idx = np.argmin(np.abs(q_vals - 2.0))
-    return h_q[q2_idx]
