@@ -26,107 +26,216 @@ References:
 """
 
 import warnings
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple
 
 import numpy as np
+from scipy.interpolate import CubicSpline
 
-# PyEMD will be imported when needed to avoid hard dependency
-try:
-    from PyEMD import EMD
 
-    PYEMD_AVAILABLE = True
-except ImportError:
-    PYEMD_AVAILABLE = False
-    warnings.warn(
-        "PyEMD is not installed. EMD-based MFDFA will not be available. "
-        "Install it with: pip install EMD-signal"
-    )
+def _find_extrema(signal: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Find indices of local maxima and minima via first differences."""
+    d = np.diff(signal)
+    maxima = np.where((d[:-1] > 0) & (d[1:] <= 0))[0] + 1
+    minima = np.where((d[:-1] < 0) & (d[1:] >= 0))[0] + 1
+    return maxima, minima
+
+
+def _make_envelope(x_points: np.ndarray, y_points: np.ndarray, n: int) -> np.ndarray:
+    """
+    Build an envelope through extrema via cubic spline with mirror
+    boundary extension (standard EMD practice, cf. Rilling et al. 2003).
+    """
+    if len(x_points) <= 1:
+        return np.full(n, np.mean(y_points) if len(y_points) > 0 else 0.0)
+
+    xl = list(x_points.astype(float))
+    yl = list(y_points.astype(float))
+
+    if x_points[0] > 0:
+        xl.insert(0, float(-x_points[0]))
+        yl.insert(0, float(y_points[0]))
+
+    if x_points[-1] < n - 1:
+        xl.append(float(2 * (n - 1) - x_points[-1]))
+        yl.append(float(y_points[-1]))
+
+    x_ext = np.asarray(xl)
+    y_ext = np.asarray(yl)
+
+    _, ui = np.unique(x_ext, return_index=True)
+    x_ext, y_ext = x_ext[ui], y_ext[ui]
+
+    return CubicSpline(x_ext, y_ext, bc_type="natural")(np.arange(n))
+
+
+def _emd_decompose(
+    signal: np.ndarray,
+    max_imfs: int = 10,
+    max_siftings: int = 100,
+    sd_threshold: float = 0.2,
+) -> np.ndarray:
+    """
+    Empirical Mode Decomposition (Section 2.3, steps 1-6, Eq. 10-12).
+
+    Returns array whose rows are [IMF_1, ..., IMF_n, residual].
+    The last row is always the residual r_n representing the local trend.
+    """
+    n = len(signal)
+    residual = signal.astype(float, copy=True)
+    imfs = []
+
+    for _ in range(max_imfs):
+        h = residual.copy()
+
+        sifted = False
+        for _ in range(max_siftings):
+            maxima, minima = _find_extrema(h)
+
+            if len(maxima) < 2 or len(minima) < 2:
+                break
+
+            upper = _make_envelope(maxima, h[maxima], n)
+            lower = _make_envelope(minima, h[minima], n)
+            mean_env = (upper + lower) / 2.0  # Eq. 10
+
+            prev_h = h.copy()
+            h = h - mean_env  # Eq. 11
+            sifted = True
+
+            sd = np.sum((prev_h - h) ** 2) / (np.sum(prev_h**2) + 1e-12)
+            if sd < sd_threshold:
+                break
+
+        if not sifted:
+            break
+
+        imfs.append(h)
+        residual = residual - h  # toward Eq. 12
+
+        maxima, minima = _find_extrema(residual)
+        if len(maxima) + len(minima) < 2:
+            break
+
+    imfs.append(residual)  # r_n (Eq. 12)
+    return np.array(imfs)
+
+
+def _emd_detrend_segment(segment: np.ndarray) -> np.ndarray:
+    """
+    EMD-based detrending of a single segment (Eq. 13).
+
+    The trend r_n is determined for each segment separately.
+    """
+    imfs = _emd_decompose(segment)
+    trend = imfs[-1]
+    return segment - trend
+
+
+def _emd_mfdfa_fluctuations(
+    signal: np.ndarray,
+    q_values: np.ndarray,
+    scales: np.ndarray,
+    n_integral: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Steps 1-5 of the EMD-based MFDFA (Sections 2.1-2.2 + 2.4).
+
+    Returns (h_q, Fq).
+    """
+    N = len(signal)
+
+    # Step 1: cumulative sum — Eq. 1
+    profile = signal - np.mean(signal)
+    for _ in range(n_integral):
+        profile = np.cumsum(profile)
+
+    Fq = np.zeros((len(q_values), len(scales)))
+
+    for s_idx, s in enumerate(scales):
+        # Step 2: partition into N_s segments of size s
+        n_segments = N // s
+        if n_segments < 1:
+            continue
+
+        # Step 3 + Eq. 3: EMD detrending → segment variance
+        F2 = np.empty(n_segments)
+        for v in range(n_segments):
+            segment = profile[v * s : (v + 1) * s]
+            residuals = _emd_detrend_segment(segment)
+            F2[v] = np.mean(residuals**2)
+
+        # Step 4 — Eq. 6, 7
+        F_vs = np.sqrt(np.maximum(F2, 1e-20))
+        for q_idx, q in enumerate(q_values):
+            if q == 0:
+                Fq[q_idx, s_idx] = np.exp(np.mean(np.log(F_vs)))
+            else:
+                Fq[q_idx, s_idx] = np.power(np.mean(np.power(F_vs, q)), 1.0 / q)
+
+    # Step 5 — Eq. 8: h(q) from log-log slope
+    h_q = np.zeros(len(q_values))
+    for q_idx in range(len(q_values)):
+        valid = Fq[q_idx] > 0
+        if np.sum(valid) > 2:
+            coeffs = np.polyfit(np.log(scales[valid]), np.log(Fq[q_idx, valid]), 1)
+            h_q[q_idx] = coeffs[0]
+
+    return h_q, Fq
 
 
 def emd_mfdfa(
     signal: np.ndarray,
     q_values: Optional[np.ndarray] = None,
     scales: Optional[np.ndarray] = None,
-    degree: int = 1,
-    imf_selection: str = "sum_all",
     n_integral: int = 1,
-    **emd_kwargs,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Perform EMD-based Multifractal Detrended Fluctuation Analysis.
+    EMD-based Multifractal Detrended Fluctuation Analysis.
 
-    This function implements a two-stage algorithm:
-    1. Empirical Mode Decomposition (EMD) to decompose the signal into
-       Intrinsic Mode Functions (IMFs)
-    2. Multifractal Detrended Fluctuation Analysis (MFDFA) applied to
-       selected IMFs
+    Implements the algorithm of Qian, Gu & Zhou (2011): the classical
+    MFDFA procedure where the polynomial detrending step (Step 3) is
+    replaced by EMD-based detrending applied to each segment independently.
 
-    The hybrid approach allows better handling of non-stationary signals
-    by removing complex trends before fractal analysis.
+    Basic usage::
 
-    Basic usage:
-        ```python
         import numpy as np
         from StatTools.analysis.emd_mfdfa import emd_mfdfa
         from StatTools.generators.kasdin_generator import create_kasdin_generator
 
-        # Generate test signal with known Hurst exponent
         generator = create_kasdin_generator(h=0.7, length=2**12)
         signal = generator.get_full_sequence()
 
-        # Perform EMD-based MFDFA
-        q, h_q, scales = emd_mfdfa(signal, degree=2)
-
-        # Estimate Hurst exponent at q=2
+        q, h_q, scales = emd_mfdfa(signal)
         h_estimate = h_q[np.where(q == 2)[0][0]]
         print(f"Estimated Hurst exponent: {h_estimate:.3f}")
-        ```
 
     Args:
-        signal (np.ndarray): Input time series (1D array)
-        q_values (np.ndarray, optional): Array of q-orders for multifractal analysis.
-            Default: np.arange(-5, 6, 1)
-        scales (np.ndarray, optional): Array of time scales for analysis.
-            Default: logarithmically spaced from 16 to N/4
-        degree (int): Polynomial degree for detrending in MFDFA (default: 1)
-        imf_selection (str): Method for selecting IMFs. Options:
-            - "sum_all": Sum all IMFs (default)
-            - "exclude_residual": Sum all IMFs except residual trend
-            - "first_n": Use first n IMFs (requires n_imfs parameter)
-            Default: "sum_all"
-        n_integral (int): Number of integration operations to apply before
-            MFDFA analysis (default: 1)
-        **emd_kwargs: Additional keyword arguments passed to PyEMD.EMD()
+        signal (np.ndarray): Input time series (1D array).
+        q_values (np.ndarray, optional): Array of q-orders for multifractal
+            analysis.  Default: ``np.arange(-5, 6, 1)``.
+        scales (np.ndarray, optional): Array of time scales (segment sizes).
+            Default: logarithmically spaced from 10 to N/4.
+        n_integral (int): Number of cumulative-sum (integration) operations
+            applied before the analysis (default: 1).
 
     Returns:
-        tuple: (q_values, h_q, scales) where:
-            - q_values (np.ndarray): Array of q-order values used
-            - h_q (np.ndarray): Generalized Hurst exponents for each q
-            - scales (np.ndarray): Time scales used in the analysis
+        tuple: (q_values, h_q, scales) where
+
+            - *q_values* — q-order values used,
+            - *h_q* — generalized Hurst exponents h(q),
+            - *scales* — time scales used.
 
     Raises:
-        ImportError: If PyEMD is not installed
-        ValueError: If signal is too short or has wrong dimensions
+        ValueError: If the signal is too short or has wrong dimensions.
 
     Notes:
-        - Minimum recommended signal length: 2^10 (1024 points)
-        - For fGn (fractional Gaussian noise): H_q ≈ constant (monofractal)
-        - For fBm (fractional Brownian motion): Use n_integral=0
-        - The relationship H = h(q=2) holds for standard DFA
+        - For fGn (fractional Gaussian noise): h(q) ≈ const (monofractal).
+        - For fBm (fractional Brownian motion): use ``n_integral=0``.
+        - h(q=2) corresponds to the standard Hurst exponent H.
 
     See Also:
-        - StatTools.analysis.dfa: Standard DFA implementation
-        - StatTools.analysis.fa: Fluctuation Analysis base methods
-        - PyEMD documentation: https://pyemd.readthedocs.io/
+        StatTools.analysis.dfa : Classical polynomial-based DFA.
     """
-    # Check PyEMD availability
-    if not PYEMD_AVAILABLE:
-        raise ImportError(
-            "PyEMD is required for EMD-based MFDFA. "
-            "Install it with: pip install EMD-signal"
-        )
-
-    # Validate input
     if not isinstance(signal, np.ndarray):
         signal = np.array(signal)
 
@@ -143,7 +252,6 @@ def emd_mfdfa(
             "Results may be unreliable."
         )
 
-    # Set default parameters
     if q_values is None:
         q_values = np.arange(-5, 6, 1)
 
@@ -151,143 +259,9 @@ def emd_mfdfa(
         s_min = 16
         s_max = N // 4
         scales = np.unique(
-            np.logspace(np.log10(s_min), np.log10(s_max), num=20, dtype=int)
+            np.logspace(np.log10(s_min), np.log10(s_max), num=25, dtype=int)
         )
 
-    # STAGE 1: EMPIRICAL MODE DECOMPOSITION (EMD)
-
-    # Initialize EMD
-    emd = EMD(**emd_kwargs)
-
-    # Decompose signal into IMFs
-    # IMFs: Intrinsic Mode Functions
-    # Each IMF represents oscillations at a specific time scale
-    imfs = emd(signal)
-
-    # imfs shape: (n_imfs, signal_length)
-    # Last component is usually the residual trend
-    n_imfs = imfs.shape[0]
-
-    # Select IMFs based on strategy
-    if imf_selection == "sum_all":
-        # Sum all IMFs including residual
-        preprocessed_signal = np.sum(imfs, axis=0)
-
-    elif imf_selection == "exclude_residual":
-        # Sum all IMFs except the last one (residual)
-        if n_imfs > 1:
-            preprocessed_signal = np.sum(imfs[:-1], axis=0)
-        else:
-            preprocessed_signal = imfs[0]
-
-    elif imf_selection.startswith("first_"):
-        # Extract number of IMFs to use
-        try:
-            n = int(imf_selection.split("_")[1])
-            if n > n_imfs:
-                warnings.warn(
-                    f"Requested {n} IMFs but only {n_imfs} available. "
-                    f"Using all {n_imfs}."
-                )
-                n = n_imfs
-            preprocessed_signal = np.sum(imfs[:n], axis=0)
-        except (IndexError, ValueError):
-            raise ValueError(
-                f"Invalid imf_selection: {imf_selection}. "
-                "Use format 'first_N' where N is a number."
-            )
-    else:
-        raise ValueError(
-            f"Unknown imf_selection method: {imf_selection}. "
-            "Valid options: 'sum_all', 'exclude_residual', 'first_N'"
-        )
-
-    # STAGE 2: MULTIFRACTAL DETRENDED FLUCTUATION ANALYSIS (MFDFA)
-
-    # Apply MFDFA to the preprocessed signal
-    h_q, Fq = _mfdfa_core(preprocessed_signal, q_values, scales, degree, n_integral)
+    h_q, _ = _emd_mfdfa_fluctuations(signal, q_values, scales, n_integral)
 
     return q_values, h_q, scales
-
-
-def _mfdfa_core(
-    signal: np.ndarray,
-    q_values: np.ndarray,
-    scales: np.ndarray,
-    degree: int,
-    n_integral: int,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Core MFDFA algorithm implementation.
-
-    This will be implemented based on Kantelhardt et al. (2002).
-
-    Args:
-        signal: Preprocessed signal (after EMD)
-        q_values: Array of q-order values
-        scales: Array of time scales
-        degree: Polynomial degree for detrending
-        n_integral: Number of integrations
-
-    Returns:
-        tuple: (h_q, Fq_scales) - Hurst exponents and fluctuation functions
-    """
-    N = len(signal)
-
-    # Remove mean
-    signal = signal - np.mean(signal)
-
-    # Integration (profile creation)
-    profile = signal
-    for _ in range(n_integral):
-        profile = np.cumsum(profile)
-
-    # Initialize fluctuation function matrix
-    Fq = np.zeros((len(q_values), len(scales)))
-
-    # For each scale s
-    for s_idx, s in enumerate(scales):
-        # Number of segments
-        n_segments = N // s
-
-        if n_segments < 1:
-            continue
-
-        # Calculate variance in each segment
-        variances = []
-        for v in range(n_segments):
-            # Extract segment
-            segment = profile[v * s : (v + 1) * s]
-
-            # Fit polynomial
-            x = np.arange(s)
-            coeffs = np.polyfit(x, segment, degree)
-            fit = np.polyval(coeffs, x)
-
-            # Calculate variance
-            var = np.mean((segment - fit) ** 2)
-            variances.append(var)
-
-        variances = np.array(variances)
-
-        # Calculate F_q(s) for each q
-        for q_idx, q in enumerate(q_values):
-            if q == 0:
-                # Special case for q=0 (logarithmic averaging)
-                Fq[q_idx, s_idx] = np.exp(0.5 * np.mean(np.log(variances + 1e-10)))
-            else:
-                # General case
-                Fq[q_idx, s_idx] = np.power(
-                    np.mean(np.power(variances, q / 2.0)), 1.0 / q
-                )
-
-    # Calculate h(q) from log-log slope
-    h_q = np.zeros(len(q_values))
-    for q_idx in range(len(q_values)):
-        # Filter out zero or invalid values
-        valid = Fq[q_idx] > 0
-        if np.sum(valid) > 2:
-            coeffs = np.polyfit(np.log(scales[valid]), np.log(Fq[q_idx, valid]), 1)
-            h_q[q_idx] = coeffs[0]
-
-    return h_q, Fq
