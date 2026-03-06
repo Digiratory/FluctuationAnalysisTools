@@ -302,7 +302,7 @@ def analyse_cross_ff_linregress(
     # We need at least min_window_size points before and after any crossover point
     if s.shape[1] < 2 * min_window_size + 1:
         raise ValueError(
-            f"Array too short for min_window_size={min_window_size}. Need at least {2 * min_window_size + 1} points, got {s.shape[0]}"
+            f"Array too short for min_window_size={min_window_size}. Need at least {2 * min_window_size + 1} points, got {s.shape[1]}"
         )
 
     cross_indices = np.arange(min_window_size, s.shape[1] - min_window_size)
