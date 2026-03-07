@@ -1,28 +1,16 @@
 """
 EMD-based Multifractal Detrended Fluctuation Analysis (EMD-MFDFA)
 
-This module implements a hybrid method combining Empirical Mode Decomposition (EMD)
-with Multifractal Detrended Fluctuation Analysis (MFDFA) for analyzing complex
-non-stationary time series with fractal properties.
+Implements the EMD-based (MF)DFA algorithm of Qian, Gu & Zhou (2011).
+The only modification to the classical MFDFA is Step 3: polynomial
+detrending is replaced by EMD-based detrending applied to each segment
+independently (Section 2.4, Eq. 13).
 
-References:
-    [1] Huang, N. E., Shen, Z., Long, S. R., Wu, M. C., Shih, H. H., Zheng, Q.,
-        Yen, N.-C., Tung, C. C., & Liu, H. H. (1998). The empirical mode decomposition
-        and the Hilbert spectrum for nonlinear and non-stationary time series analysis.
-        Proceedings of the Royal Society A: Mathematical, Physical and Engineering Sciences,
-        454(1971), 903-995.
-        DOI: https://doi.org/10.1098/rspa.1998.0193
-
-    [2] Kantelhardt, J. W., Zschiegner, S. A., Koscielny-Bunde, E., Havlin, S.,
-        Bunde, A., & Stanley, H. E. (2002). Multifractal detrended fluctuation analysis
-        of nonstationary time series. Physica A: Statistical Mechanics and its Applications,
-        316(1-4), 87-114.
-        DOI: https://doi.org/10.1016/S0378-4371(02)01383-3
-
-    [3] Xi-Yuan Qian, Gao-Feng Gu, Wei-Xing Zhou (2011). Modified detrended fluctuation analysis
-        based on empirical mode decomposition for the characterization of anti-persistent processes.
-        Physica A: Statistical Mechanics and its Applications, 390(23–24), 4388-4395.
-        DOI: https://doi.org/10.1016/j.physa.2011.07.008
+Reference:
+    Xi-Yuan Qian, Gao-Feng Gu, Wei-Xing Zhou (2011). Modified detrended
+    fluctuation analysis based on empirical mode decomposition for the
+    characterization of anti-persistent processes. Physica A, 390(23-24),
+    4388-4395.  DOI: https://doi.org/10.1016/j.physa.2011.07.008
 """
 
 import warnings
@@ -244,12 +232,18 @@ def emd_mfdfa(
 
     N = len(signal)
     if N < 64:
-        raise ValueError(f"Signal too short (N={N}). Minimum recommended: 1024 points")
+        raise ValueError(
+            f"Signal too short (N={N}). "
+            f"With s_max=N/4={N // 4} the log-log fitting range is too narrow."
+        )
 
     if N < 1024:
         warnings.warn(
-            f"Signal length (N={N}) is shorter than recommended (2^10 = 1024). "
-            "Results may be unreliable."
+            f"Signal length (N={N}) may be too short for reliable scaling "
+            f"estimation: with s_max=N/4={N // 4}, the log-log fitting range "
+            "is narrow.",
+            UserWarning,
+            stacklevel=2,
         )
 
     if q_values is None:
