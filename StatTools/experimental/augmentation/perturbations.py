@@ -104,7 +104,7 @@ def add_exponential_gaps(
 
     pos = 0
     while pos < n:
-        interval = int(lambda_x * np.random.weibull(k))
+        interval = max(1, int(lambda_x * np.random.weibull(k)))
         pos += interval
         if pos >= n:
             break
