@@ -85,7 +85,7 @@ def add_exponential_gaps(
             trajectory_with_gaps — trajectory with np.nan in gap positions.
             gap_indices — list of (start, end) tuples of gap intervals.
     """
-    if hg >= 1:
+    if hg >= 1 or hg < 0.5:
         raise ValueError("hg must be in [0.5;1)")
     if rq <= 0:
         raise ValueError("rq must be more then 0")
@@ -104,17 +104,15 @@ def add_exponential_gaps(
 
     pos = 0
     while pos < n:
-        interval = max(1, int(lambda_x * np.random.weibull(k)))
+        interval = max(1, round(lambda_x * np.random.weibull(k)))
         pos += interval
         if pos >= n:
             break
 
-        length = max(1, int(lambda_y * np.random.weibull(k)))
+        length = round(lambda_y * np.random.weibull(k))
         end_pos = min(pos + length, n)
 
         traj_with_gaps[pos:end_pos] = np.nan
         gap_indices.append((pos, end_pos))
-
-        pos = end_pos
 
     return traj_with_gaps, gap_indices
