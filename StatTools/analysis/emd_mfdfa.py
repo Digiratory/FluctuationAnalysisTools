@@ -1,8 +1,8 @@
 """
-EMD-based Multifractal Detrended Fluctuation Analysis (EMD-MFDFA)
+EMD-based (MF)DFA — Detrended Fluctuation Analysis with EMD detrending.
 
-Implements the EMD-based (MF)DFA algorithm of Qian, Gu & Zhou (2011).
-The only modification to the classical MFDFA is Step 3: polynomial
+Implements the EMD-based DFA and MFDFA algorithms of Qian, Gu & Zhou (2011).
+The only modification to the classical (MF)DFA is Step 3: polynomial
 detrending is replaced by EMD-based detrending applied to each segment
 independently (Section 2.4, Eq. 13).
 
@@ -130,7 +130,7 @@ def _emd_mfdfa_fluctuations(
 
     Returns (h_q, Fq).
     """
-    N = len(signal)
+    n = len(signal)
 
     # Step 1: cumulative sum — Eq. 1
     profile = signal - np.mean(signal)
@@ -141,7 +141,7 @@ def _emd_mfdfa_fluctuations(
 
     for s_idx, s in enumerate(scales):
         # Step 2: partition into N_s segments of size s
-        n_segments = N // s
+        n_segments = n // s
         if n_segments < 1:
             continue
 
@@ -169,6 +169,105 @@ def _emd_mfdfa_fluctuations(
             h_q[q_idx] = coeffs[0]
 
     return h_q, Fq
+
+
+def _emd_dfa_fluctuations(
+    signal: np.ndarray,
+    scales: np.ndarray,
+    n_integral: int,
+) -> np.ndarray:
+    """
+    Compute F^2(s) for EMD-DFA (q = 2 special case, Eq. 4 + Eq. 13).
+
+    Returns 1-D array of F^2(s) values, one per scale.
+    """
+    n = len(signal)
+
+    profile = signal - np.mean(signal)
+    for _ in range(n_integral):
+        profile = np.cumsum(profile)
+
+    F2_s = np.zeros(len(scales))
+
+    for s_idx, s in enumerate(scales):
+        n_segments = n // s
+        if n_segments < 1:
+            continue
+
+        F2 = np.empty(n_segments)
+        for v in range(n_segments):
+            segment = profile[v * s : (v + 1) * s]
+            residuals = _emd_detrend_segment(segment)
+            F2[v] = np.mean(residuals**2)
+
+        F2_s[s_idx] = np.mean(F2)
+
+    return F2_s
+
+
+def emd_dfa(
+    signal: np.ndarray,
+    scales: Optional[np.ndarray] = None,
+    n_integral: int = 1,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    EMD-based Detrended Fluctuation Analysis (EMD-DFA).
+
+    Args:
+        signal (np.ndarray): Input time series (1D array).
+        scales (np.ndarray, optional): Array of time scales (segment sizes).
+            Default: logarithmically spaced from 16 to N/4.
+        n_integral (int): Number of cumulative-sum (integration) operations
+            applied before the analysis (default: 1).
+
+    Returns:
+        tuple: (scales, F2_s) where
+            - *scales* — time scales used,
+            - *F2_s* — squared fluctuation function F²(s).
+
+    Raises:
+        ValueError: If the signal is too short or has wrong dimensions.
+
+    See Also:
+        StatTools.analysis.dfa.dfa : Classical polynomial-based DFA.
+        emd_mfdfa : Full multifractal version (arbitrary q).
+    """
+    if not isinstance(signal, np.ndarray):
+        signal = np.array(signal)
+
+    if signal.ndim != 1:
+        raise ValueError("Input signal must be a 1D array")
+
+    n = len(signal)
+    if n < 64:
+        raise ValueError(
+            f"Signal too short (N={n}). "
+            f"With s_max=N/4={n // 4} the log-log fitting range is too narrow."
+        )
+
+    if n < 1024:
+        warnings.warn(
+            f"Signal length (N={n}) may be too short for reliable scaling "
+            f"estimation: with s_max=N/4={n // 4}, the log-log fitting range "
+            "is narrow.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    if scales is None:
+        s_min = 16
+        s_max = n // 4
+        scales = np.unique(
+            np.logspace(np.log10(s_min), np.log10(s_max), num=25, dtype=int)
+        )
+
+    F2_s = _emd_dfa_fluctuations(signal, scales, n_integral)
+
+    valid = F2_s > 0
+    scales = scales[valid]
+    F2_s = F2_s[valid]
+
+    return scales, F2_s
 
 
 def emd_mfdfa(
@@ -230,17 +329,17 @@ def emd_mfdfa(
     if signal.ndim != 1:
         raise ValueError("Input signal must be a 1D array")
 
-    N = len(signal)
-    if N < 64:
+    n = len(signal)
+    if n < 64:
         raise ValueError(
-            f"Signal too short (N={N}). "
-            f"With s_max=N/4={N // 4} the log-log fitting range is too narrow."
+            f"Signal too short (N={n}). "
+            f"With s_max=N/4={n // 4} the log-log fitting range is too narrow."
         )
 
-    if N < 1024:
+    if n < 1024:
         warnings.warn(
-            f"Signal length (N={N}) may be too short for reliable scaling "
-            f"estimation: with s_max=N/4={N // 4}, the log-log fitting range "
+            f"Signal length (N={n}) may be too short for reliable scaling "
+            f"estimation: with s_max=N/4={n // 4}, the log-log fitting range "
             "is narrow.",
             UserWarning,
             stacklevel=2,
@@ -251,7 +350,7 @@ def emd_mfdfa(
 
     if scales is None:
         s_min = 16
-        s_max = N // 4
+        s_max = n // 4
         scales = np.unique(
             np.logspace(np.log10(s_min), np.log10(s_max), num=25, dtype=int)
         )
