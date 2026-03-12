@@ -279,7 +279,7 @@ def tds_dpcca_worker(
                     if local_end <= 0:
                         continue
 
-                    intersection_length = min(global_end - start_pos, local_end)
+                    intersection_length = np.abs(min(global_end - start_pos, local_end))
                     if intersection_length != s_val:
                         continue
 
@@ -292,7 +292,7 @@ def tds_dpcca_worker(
                     if global_start >= global_end:
                         continue
 
-                    intersection_length = global_end - global_start
+                    intersection_length = np.abs(global_end - global_start)
                     if intersection_length != s_val:
                         continue
                     shift_sig = -lag
