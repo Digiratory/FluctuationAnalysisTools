@@ -264,6 +264,9 @@ def tds_dpcca_worker(
         # and shift_sig_lag: index of current value in current time window of signal with lag
         # index of current value in current time window of signal with lag: x[i-tau] and x[i].
         for lag_index, lag in enumerate(time_delay_list):
+            covariation = np.zeros((n_signals, n_signals), dtype=float)
+            correlation = np.zeros((n_signals, n_signals), dtype=float)
+            cross_correlation = np.zeros((n_signals, n_signals), dtype=float)
             for w in range(n_windows):
                 start_pos = start_window[w]
                 if lag >= 0:  # value of start position of current window
@@ -276,8 +279,8 @@ def tds_dpcca_worker(
                     if local_end <= 0:
                         continue
 
-                    cross_points = min(global_end - start_pos, local_end)
-                    if cross_points <= 0:
+                    intersection_length = min(global_end - start_pos, local_end)
+                    if intersection_length != s_val:
                         continue
 
                     shift_sig = 0
@@ -289,23 +292,23 @@ def tds_dpcca_worker(
                     if global_start >= global_end:
                         continue
 
-                    cross_points = global_end - global_start
-                    if cross_points <= 0:
+                    intersection_length = global_end - global_start
+                    if intersection_length != s_val:
                         continue
                     shift_sig = -lag
                     shift_sig_lag = 0
 
-                signal_windows = np.zeros((n_signals, cross_points), dtype=float)
-                signal_lag_windows = np.zeros((n_signals, cross_points), dtype=float)
+                signal_windows = np.zeros((n_signals, s_val), dtype=float)
+                signal_lag_windows = np.zeros((n_signals, s_val), dtype=float)
                 for sig_idx in range(n_signals):
 
                     data_true = signal_view[
-                        sig_idx, w, shift_sig : shift_sig + cross_points
+                        sig_idx, w, shift_sig : shift_sig + s_val
                     ]  # detrended array with selected data
                     data_lag_true = signal_view[
-                        sig_idx, w, shift_sig_lag : cross_points + shift_sig_lag
+                        sig_idx, w, shift_sig_lag : s_val + shift_sig_lag
                     ]  # detrended array with selected data with time lags
-
+                    assert len(data_true) == s_val
                     signal_windows[sig_idx] = _detrend(data_true, pd)
                     signal_lag_windows[sig_idx] = _detrend(data_lag_true, pd)
                 covariation = _covariation(signal_windows, signal_lag_windows)
@@ -407,7 +410,7 @@ def dpcca(
                 raise ValueError("Cannot use S > L / 4")
             s = (s,)
 
-        if (processes == 1 or len(s) == 1) and max_lag is not None:
+        if max_lag is not None:
             p, r, f = tds_dpcca_worker(
                 s,
                 arr,
