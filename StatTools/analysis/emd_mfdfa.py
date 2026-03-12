@@ -14,7 +14,7 @@ Reference:
 """
 
 import warnings
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 from scipy.interpolate import CubicSpline
@@ -119,67 +119,61 @@ def _emd_detrend_segment(segment: np.ndarray) -> np.ndarray:
     return segment - trend
 
 
-def _emd_mfdfa_fluctuations(
+# ── Shared helpers ──────────────────────────────────────────────────────
+
+
+def _validate_and_prepare(
     signal: np.ndarray,
-    q_values: np.ndarray,
-    scales: np.ndarray,
-    n_integral: int,
+    scales: Optional[np.ndarray],
+    stacklevel: int = 3,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Steps 1-5 of the EMD-based MFDFA (Sections 2.1-2.2 + 2.4).
+    """Validate input signal and build default scales if needed."""
+    if not isinstance(signal, np.ndarray):
+        signal = np.array(signal)
 
-    Returns (h_q, Fq).
-    """
+    if signal.ndim != 1:
+        raise ValueError("Input signal must be a 1D array")
+
     n = len(signal)
+    if n < 64:
+        raise ValueError(
+            f"Signal too short (N={n}). "
+            f"With s_max=N/4={n // 4} the log-log fitting range is too narrow."
+        )
 
-    # Step 1: cumulative sum — Eq. 1
-    profile = signal - np.mean(signal)
-    for _ in range(n_integral):
-        profile = np.cumsum(profile)
+    if n < 1024:
+        warnings.warn(
+            f"Signal length (N={n}) may be too short for reliable scaling "
+            f"estimation: with s_max=N/4={n // 4}, the log-log fitting range "
+            "is narrow.",
+            UserWarning,
+            stacklevel=stacklevel,
+        )
 
-    Fq = np.zeros((len(q_values), len(scales)))
+    if scales is None:
+        s_min = 16
+        s_max = n // 4
+        scales = np.unique(
+            np.logspace(np.log10(s_min), np.log10(s_max), num=25, dtype=int)
+        )
 
-    for s_idx, s in enumerate(scales):
-        # Step 2: partition into N_s segments of size s
-        n_segments = n // s
-        if n_segments < 1:
-            continue
-
-        # Step 3 + Eq. 3: EMD detrending → segment variance
-        F2 = np.empty(n_segments)
-        for v in range(n_segments):
-            segment = profile[v * s : (v + 1) * s]
-            residuals = _emd_detrend_segment(segment)
-            F2[v] = np.mean(residuals**2)
-
-        # Step 4 — Eq. 6, 7
-        F_vs = np.sqrt(np.maximum(F2, 1e-20))
-        for q_idx, q in enumerate(q_values):
-            if q == 0:
-                Fq[q_idx, s_idx] = np.exp(np.mean(np.log(F_vs)))
-            else:
-                Fq[q_idx, s_idx] = np.power(np.mean(np.power(F_vs, q)), 1.0 / q)
-
-    # Step 5 — Eq. 8: h(q) from log-log slope
-    h_q = np.zeros(len(q_values))
-    for q_idx in range(len(q_values)):
-        valid = Fq[q_idx] > 0
-        if np.sum(valid) > 2:
-            coeffs = np.polyfit(np.log(scales[valid]), np.log(Fq[q_idx, valid]), 1)
-            h_q[q_idx] = coeffs[0]
-
-    return h_q, Fq
+    return signal, scales
 
 
-def _emd_dfa_fluctuations(
+def _compute_segment_variances(
     signal: np.ndarray,
     scales: np.ndarray,
     n_integral: int,
-) -> np.ndarray:
+) -> List[np.ndarray]:
     """
-    Compute F^2(s) for EMD-DFA (q = 2 special case, Eq. 4 + Eq. 13).
+    Steps 1-3 common to both EMD-DFA and EMD-MFDFA.
 
-    Returns 1-D array of F^2(s) values, one per scale.
+    1. Build profile via cumulative sum (Eq. 1).
+    2. Partition into non-overlapping segments of size *s*.
+    3. EMD-detrend each segment and compute its variance F²(v,s).
+
+    Returns a list (one entry per scale) of 1-D arrays F²(v) for each
+    segment *v*.  An entry may be empty if the scale is too large.
     """
     n = len(signal)
 
@@ -187,11 +181,11 @@ def _emd_dfa_fluctuations(
     for _ in range(n_integral):
         profile = np.cumsum(profile)
 
-    F2_s = np.zeros(len(scales))
-
-    for s_idx, s in enumerate(scales):
+    result: List[np.ndarray] = []
+    for s in scales:
         n_segments = n // s
         if n_segments < 1:
+            result.append(np.empty(0))
             continue
 
         F2 = np.empty(n_segments)
@@ -200,9 +194,9 @@ def _emd_dfa_fluctuations(
             residuals = _emd_detrend_segment(segment)
             F2[v] = np.mean(residuals**2)
 
-        F2_s[s_idx] = np.mean(F2)
+        result.append(F2)
 
-    return F2_s
+    return result
 
 
 def emd_dfa(
@@ -232,42 +226,14 @@ def emd_dfa(
         StatTools.analysis.dfa.dfa : Classical polynomial-based DFA.
         emd_mfdfa : Full multifractal version (arbitrary q).
     """
-    if not isinstance(signal, np.ndarray):
-        signal = np.array(signal)
+    signal, scales = _validate_and_prepare(signal, scales)
 
-    if signal.ndim != 1:
-        raise ValueError("Input signal must be a 1D array")
+    F2_list = _compute_segment_variances(signal, scales, n_integral)
 
-    n = len(signal)
-    if n < 64:
-        raise ValueError(
-            f"Signal too short (N={n}). "
-            f"With s_max=N/4={n // 4} the log-log fitting range is too narrow."
-        )
-
-    if n < 1024:
-        warnings.warn(
-            f"Signal length (N={n}) may be too short for reliable scaling "
-            f"estimation: with s_max=N/4={n // 4}, the log-log fitting range "
-            "is narrow.",
-            UserWarning,
-            stacklevel=2,
-        )
-
-    if scales is None:
-        s_min = 16
-        s_max = n // 4
-        scales = np.unique(
-            np.logspace(np.log10(s_min), np.log10(s_max), num=25, dtype=int)
-        )
-
-    F2_s = _emd_dfa_fluctuations(signal, scales, n_integral)
+    F2_s = np.array([np.mean(f2) if len(f2) > 0 else 0.0 for f2 in F2_list])
 
     valid = F2_s > 0
-    scales = scales[valid]
-    F2_s = F2_s[valid]
-
-    return scales, F2_s
+    return scales[valid], F2_s[valid]
 
 
 def emd_mfdfa(
@@ -323,38 +289,32 @@ def emd_mfdfa(
     See Also:
         StatTools.analysis.dfa : Classical polynomial-based DFA.
     """
-    if not isinstance(signal, np.ndarray):
-        signal = np.array(signal)
-
-    if signal.ndim != 1:
-        raise ValueError("Input signal must be a 1D array")
-
-    n = len(signal)
-    if n < 64:
-        raise ValueError(
-            f"Signal too short (N={n}). "
-            f"With s_max=N/4={n // 4} the log-log fitting range is too narrow."
-        )
-
-    if n < 1024:
-        warnings.warn(
-            f"Signal length (N={n}) may be too short for reliable scaling "
-            f"estimation: with s_max=N/4={n // 4}, the log-log fitting range "
-            "is narrow.",
-            UserWarning,
-            stacklevel=2,
-        )
+    signal, scales = _validate_and_prepare(signal, scales)
 
     if q_values is None:
         q_values = np.arange(-5, 6, 1)
 
-    if scales is None:
-        s_min = 16
-        s_max = n // 4
-        scales = np.unique(
-            np.logspace(np.log10(s_min), np.log10(s_max), num=25, dtype=int)
-        )
+    F2_list = _compute_segment_variances(signal, scales, n_integral)
 
-    h_q, _ = _emd_mfdfa_fluctuations(signal, q_values, scales, n_integral)
+    # Step 4 — Eq. 6, 7: aggregate segment variances across q-orders
+    Fq = np.zeros((len(q_values), len(scales)))
+    for s_idx, f2 in enumerate(F2_list):
+        if len(f2) == 0:
+            continue
+
+        F_vs = np.sqrt(np.maximum(f2, 1e-20))
+        for q_idx, q in enumerate(q_values):
+            if q == 0:
+                Fq[q_idx, s_idx] = np.exp(np.mean(np.log(F_vs)))
+            else:
+                Fq[q_idx, s_idx] = np.power(np.mean(np.power(F_vs, q)), 1.0 / q)
+
+    # Step 5 — Eq. 8: h(q) from log-log slope
+    h_q = np.zeros(len(q_values))
+    for q_idx in range(len(q_values)):
+        valid = Fq[q_idx] > 0
+        if np.sum(valid) > 2:
+            coeffs = np.polyfit(np.log(scales[valid]), np.log(Fq[q_idx, valid]), 1)
+            h_q[q_idx] = coeffs[0]
 
     return q_values, h_q, scales
