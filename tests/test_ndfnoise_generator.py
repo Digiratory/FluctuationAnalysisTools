@@ -2,6 +2,7 @@
 
 import os
 from multiprocessing import Pool
+from typing import Union
 
 import numpy as np
 import pytest
@@ -29,7 +30,7 @@ def _process_2d_slice(slice_2d: np.ndarray) -> float:
     return ff_parameters.slopes[0].value
 
 
-def get_h_dfa_sliced(arr: np.ndarray) -> float:
+def get_h_dfa_sliced(arr: np.ndarray) -> Union[float, np.ndarray]:
     """
     Calculate DFA for z slices.
     For 2D: single Hurst exponent.
@@ -40,7 +41,7 @@ def get_h_dfa_sliced(arr: np.ndarray) -> float:
     nz = arr.shape[2]
     slice_indices = np.arange(0, nz, 250)
 
-    with Pool() as pool:
+    with Pool(processes=8) as pool:
         slices = [arr[:, :, i] for i in slice_indices]
         results = pool.map(_process_2d_slice, slices)
 
