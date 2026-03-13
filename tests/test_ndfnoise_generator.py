@@ -13,10 +13,8 @@ from StatTools.generators.ndfnoise_generator import ndfnoise
 
 IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
 testdata = {
-    "h_list_2d": [0.55, 0.8, 1.2, 1.5],
-    "h_list_3d": [1.1, 1.2, 1.5],
-    "rate_2d": [9],
-    "rate_3d": [9],
+    "h_list": [0.8, 1.2, 1.5],
+    "rate": [9],
 }
 
 
@@ -49,15 +47,15 @@ def get_h_dfa_sliced(arr: np.ndarray) -> Union[float, np.ndarray]:
 
 
 @pytest.mark.skipif(IN_GITHUB_ACTIONS, reason="Test too long for Github Actions.")
-@pytest.mark.parametrize("hurst_theory", testdata["h_list_2d"])
-@pytest.mark.parametrize("rate", testdata["rate_2d"])
+@pytest.mark.parametrize("hurst_theory", testdata["h_list"])
+@pytest.mark.parametrize("rate", testdata["rate"])
 def test_ndfnoise_generator_2d(hurst_theory: float, rate: int):
     """Generator test"""
     size = 2**rate
     dim = 2
     shape = (size,) * dim
     f = ndfnoise(shape, hurst_theory, normalize=True)
-    hurst_est_array = get_h_dfa_sliced(np.diff(f))
+    hurst_est_array = get_h_dfa_sliced(f)
     hurst_mean = np.mean(hurst_est_array)
     assert np.isclose(
         hurst_mean, hurst_theory, atol=0.2
@@ -65,15 +63,15 @@ def test_ndfnoise_generator_2d(hurst_theory: float, rate: int):
 
 
 @pytest.mark.skipif(IN_GITHUB_ACTIONS, reason="Test too long for Github Actions.")
-@pytest.mark.parametrize("hurst_theory", testdata["h_list_3d"])
-@pytest.mark.parametrize("rate", testdata["rate_3d"])
+@pytest.mark.parametrize("hurst_theory", testdata["h_list"])
+@pytest.mark.parametrize("rate", testdata["rate"])
 def test_ndfnoise_generator_3d(hurst_theory: float, rate: int):
     """Generator test"""
     size = 2**rate
     dim = 3
     shape = (size,) * dim
     f = ndfnoise(shape, hurst_theory, normalize=True)
-    hurst_est_array = get_h_dfa_sliced(np.diff(f))
+    hurst_est_array = get_h_dfa_sliced(f)
     hurst_mean = np.mean(hurst_est_array, where=hurst_est_array != 0)
     assert np.isclose(
         hurst_mean, hurst_theory, atol=0.2
