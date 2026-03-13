@@ -81,13 +81,17 @@ def _detrend(current_signal: np.ndarray, pd: np.int32):
     Returns:
         y_detrended(np.ndarray): Detrended data array.
     """
-    current_signal_values = len(current_signal)
-    xw = np.arange(current_signal_values, dtype=np.int32)
-    p_fit = np.polyfit(xw, current_signal, deg=pd)
-    z_fit = np.polyval(p_fit, xw)
-    y_detrended = np.zeros_like(current_signal, dtype=np.float64)
-    y_detrended[:] = current_signal - z_fit
-    return y_detrended
+    current_signal = np.asarray(current_signal, dtype=np.float64)
+    n = len(current_signal)
+    if n < pd + 2:
+        return None
+    xw = np.arange(n, dtype=np.int32)
+    try:
+        p_fit = np.polyfit(xw, current_signal, deg=pd, rcond=None)
+        z_fit = np.polyval(p_fit, xw)
+        return current_signal - z_fit
+    except np.linalg.LinAlgError:
+        return None
 
 
 # @profile()
@@ -214,42 +218,32 @@ def tds_dpcca_worker(
     else:
         raise ValueError("Use lags")
 
-    n_lags = len(time_delay_list)  # length of input time lags array
+    n_lags = len(time_delay_list)
     n_signals, n = arr.shape
 
     cumsum_arr = arr
     for _ in range(n_integral):
-        cumsum_arr = np.cumsum(cumsum_arr, axis=1)  # integral sum
+        cumsum_arr = np.cumsum(cumsum_arr, axis=1)
 
-    f = np.zeros(
-        (n_lags, len(s_list), n_signals, n_signals), dtype=np.float64
-    )  # covariation
-    r = np.zeros(
-        (n_lags, len(s_list), n_signals, n_signals), dtype=np.float64
-    )  # levels of cross correlation
-    p = np.zeros(
-        (n_lags, len(s_list), n_signals, n_signals), dtype=np.float64
-    )  # partial cross correlation levels
+    f = np.zeros((n_lags, len(s_list), n_signals, n_signals), dtype=np.float64)
+    r = np.zeros((n_lags, len(s_list), n_signals, n_signals), dtype=np.float64)
+    p = np.zeros((n_lags, len(s_list), n_signals, n_signals), dtype=np.float64)
 
     for s_i, s_val in enumerate(s_list):
 
         if s_val > n:
             raise ValueError("Time window couldnt be larger then input data array")
 
-        start = np.arange(
-            0, n - s_val + 1
-        )  # all indices of beginning of the windows in input data array
-        start_window = start[
-            :: int(step * s_val)
-        ]  # biginning of the all windows with step
+        start = np.arange(0, n - s_val + 1)  # all indecies of start time windows
+        start_window = start[:: int(step * s_val)]  # with step
         n_windows = len(start_window)  # value of windows
 
         signal_view = np.lib.stride_tricks.sliding_window_view(
             cumsum_arr, window_shape=s_val, axis=1
-        )  # sliding window
+        )
         signal_view = signal_view[
             :, :: int(step * s_val), :
-        ]  # (signals,all windows, len of window)
+        ]  # sliding window in time windows
 
         # We have global data and indices: data in all input array
         # local data: data and indices in current window
@@ -257,7 +251,7 @@ def tds_dpcca_worker(
         # x[i] and y[i+tau] and x[i] and y[i-tau] where tau is value of time lag. Also we have limits:
         # if time lag>0: global start index-value of start position of current window, global_end: min(start_pos+s_val,n-lag)
         # where s_val is length of current window also index of current value must be less then (n-lag) where n is length of input array
-        # local end index must be less then (length of current window-time lag). Cross points is value of points for analyse.
+        # local end index must be less then (length of current window-time lag). Intersection length is value of points for analyse.
         # if time lag<0: global start: max(value of start position of current window, value of start position of current window-time lag)
         # global end is value of start position of current window+ length of current window.
         # Also we have shift_sig: index of current value in current time window of signal without lag: x[i] and x[i+tau]
@@ -267,54 +261,72 @@ def tds_dpcca_worker(
             covariation = np.zeros((n_signals, n_signals), dtype=float)
             correlation = np.zeros((n_signals, n_signals), dtype=float)
             cross_correlation = np.zeros((n_signals, n_signals), dtype=float)
+
             for w in range(n_windows):
-                start_pos = start_window[w]
-                if lag >= 0:  # value of start position of current window
-                    global_end = min(start_pos + s_val, n - lag)
-                    if (
-                        start_pos >= global_end
-                    ):  # start position cant be larger then global index lag
+                start_pos = start_window[w]  # start of current window
+                if lag >= 0:
+                    global_end = min(start_pos + s_val, n - lag)  # global end with lag
+                    if start_pos >= global_end:
                         continue
-                    local_end = s_val - lag
+                    local_end = s_val - lag  # local end with lag
                     if local_end <= 0:
                         continue
 
-                    intersection_length = np.abs(min(global_end - start_pos, local_end))
-                    if intersection_length != s_val:
+                    intersection_lenght = min(
+                        global_end - start_pos, local_end
+                    )  # points for analyse
+                    if intersection_lenght <= 0:
                         continue
 
-                    shift_sig = 0
-                    shift_sig_lag = lag
+                    shift_sig = 0  # signal without lag
+                    shift_sig_lag = lag  # signal with lag
                 else:
-
-                    global_start = max(start_pos, start_pos - lag)
-                    global_end = start_pos + s_val
+                    global_start = max(
+                        start_pos, start_pos - lag
+                    )  # global start for lag<0:(0 or 0--3=3)
+                    global_end = start_pos + s_val  # global ennd
                     if global_start >= global_end:
                         continue
 
-                    intersection_length = np.abs(global_end - global_start)
-                    if intersection_length != s_val:
+                    intersection_lenght = global_end - global_start
+                    if intersection_lenght <= 0:
                         continue
                     shift_sig = -lag
                     shift_sig_lag = 0
 
-                signal_windows = np.zeros((n_signals, s_val), dtype=float)
-                signal_lag_windows = np.zeros((n_signals, s_val), dtype=float)
-                for sig_idx in range(n_signals):
+                signal_windows = np.zeros((n_signals, intersection_lenght), dtype=float)
+                signal_lag_windows = np.zeros(
+                    (n_signals, intersection_lenght), dtype=float
+                )
 
+                detrend = True
+                for sig_idx in range(n_signals):
                     data_true = signal_view[
-                        sig_idx, w, shift_sig : shift_sig + s_val
-                    ]  # detrended array with selected data
+                        sig_idx, w, shift_sig : shift_sig + intersection_lenght
+                    ]  # data without lag in w[index]-window, points for analyse
                     data_lag_true = signal_view[
-                        sig_idx, w, shift_sig_lag : s_val + shift_sig_lag
-                    ]  # detrended array with selected data with time lags
-                    assert len(data_true) == s_val
-                    signal_windows[sig_idx] = _detrend(data_true, pd)
-                    signal_lag_windows[sig_idx] = _detrend(data_lag_true, pd)
+                        sig_idx, w, shift_sig_lag : intersection_lenght + shift_sig_lag
+                    ]  # data with lag
+                    detrended_true = _detrend(data_true, pd)
+                    detrended_lag = _detrend(data_lag_true, pd)
+
+                    if detrended_true is None or detrended_lag is None:
+                        detrend = False
+                        break
+
+                    signal_windows[sig_idx] = (
+                        detrended_true  # detrended signal without lag
+                    )
+                    signal_lag_windows[sig_idx] = (
+                        detrended_lag  # detrended signal with lag
+                    )
+
+                if detrend is False:
+                    continue  # if hasn't enougth data in current window for detrend->skip this window
+
                 covariation = _covariation(signal_windows, signal_lag_windows)
                 correlation = _correlation(covariation)
                 cross_correlation = _cross_correlation(correlation)
-
             f[lag_index, s_i] = covariation
             r[lag_index, s_i] = correlation
             p[lag_index, s_i] = cross_correlation
