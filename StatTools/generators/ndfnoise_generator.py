@@ -1,4 +1,4 @@
-"""Generate n-dimensional fBm field."""
+"""Generate n-dimensional fGn field."""
 
 import numpy as np
 
@@ -10,7 +10,7 @@ def ndfnoise(
     dtype=np.float32,
 ) -> np.ndarray:
     """
-    N-dimensional fractional Brownian motion (fBm) generator.
+    N-dimensional fractional Gaussian noise (fGn) generator.
     Uses rFFT (real FFT) and float32 to reduce memory usage.
 
     Method from Timmer, J., & Koenig, M. (1995). On generating power law noise.
@@ -22,7 +22,7 @@ def ndfnoise(
         dtype (np.dtype): Data type of the field. Default is float32.
 
     Returns:
-        field (np.ndarray): n-dimensional fractional Gaussian noise field.
+        field (np.ndarray): n-dimensional fractional Gaussian noise (fGn) field.
 
     Basic usage:
         ```python
@@ -40,7 +40,7 @@ def ndfnoise(
     # The final shape of the rFFT spectrum
     spec_shape = (*shape[:-1], shape[-1] // 2 + 1)
 
-    if isinstance(hurst, np.ndarray):  # anisotropic fBm version
+    if isinstance(hurst, np.ndarray):  # anisotropic fGn version
         S = np.ones(spec_shape, dtype=dtype)
         # Usual FFT axes
         for i, n in enumerate(shape[:-1]):
@@ -48,11 +48,11 @@ def ndfnoise(
             reshape = [1] * dim
             reshape[i] = n
             reshape[-1] = 1
-            S *= np.abs(f.reshape(reshape)) ** (-(hurst[i] + 0.5))
+            S *= np.abs(f.reshape(reshape)) ** (-(hurst[i] - 0.5))
 
         # rFFT axis
         f_last = np.fft.rfftfreq(shape[-1], d=1.0).astype(dtype)
-        S *= np.abs(f_last.reshape((1,) * (dim - 1) + (-1,))) ** (-(hurst[-1] + 0.5))
+        S *= np.abs(f_last.reshape((1,) * (dim - 1) + (-1,))) ** (-(hurst[-1] - 0.5))
 
         # removing the singularity at zero
         S[~np.isfinite(S)] = 0.0
@@ -77,7 +77,7 @@ def ndfnoise(
         k = np.sqrt(k_sq, dtype=dtype)
 
         # Spectrum initialization
-        alpha = hurst + dim / 2.0
+        alpha = hurst + (dim - 2) / 2.0
         S = np.zeros_like(k)
         nonzero = k > 0
         S[nonzero] = k[nonzero] ** (-alpha)
