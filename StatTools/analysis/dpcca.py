@@ -174,9 +174,9 @@ def tds_dpcca_worker(
 ) -> Union[tuple, None]:
     """
     Core of DPCAA algorithm with time lags. Takes bunch of S-values and returns 3 4d-matrices: first index
-    represents length of time lags array. There is global data and indices: data in all input array and
-    local data: data and indices in current window. Comparison signal_1 and signal_2 with time delays by indicies:
-    find correlation and etc of x[i] and y[i+tau] and x[i] and y[i-tau] where tau is value of time lag.
+    represents length of time lags array. There is global data and indices: data in all input array as s_val.
+    Comparison of signal_1 and signal_2 with time delays by windows(s_val) shifting: find correlation and etc
+    of x[i] and y[i+tau] and x[i] and y[i-tau] where tau is value of time lag.
 
     Args:
         s (Union[int, Iterable]): points where  fluctuation function F(s) is calculated.
@@ -245,18 +245,6 @@ def tds_dpcca_worker(
             :, :: int(step * s_val), :
         ]  # sliding window in time windows
 
-        # We have global data and indices: data in all input array
-        # local data: data and indices in current window
-        # compare signal_1 and signal_2 with time delays by indices: find correlation and etc of
-        # x[i] and y[i+tau] and x[i] and y[i-tau] where tau is value of time lag. Also we have limits:
-        # if time lag>0: global start index-value of start position of current window, global_end: min(start_pos+s_val,n-lag)
-        # where s_val is length of current window also index of current value must be less then (n-lag) where n is length of input array
-        # local end index must be less then (length of current window-time lag). Intersection length is value of points for analyse.
-        # if time lag<0: global start: max(value of start position of current window, value of start position of current window-time lag)
-        # global end is value of start position of current window+ length of current window.
-        # Also we have shift_sig: index of current value in current time window of signal without lag: x[i] and x[i+tau]
-        # and shift_sig_lag: index of current value in current time window of signal with lag
-        # index of current value in current time window of signal with lag: x[i-tau] and x[i].
         for lag_index, lag in enumerate(time_delay_list):
             covariation = np.zeros((n_signals, n_signals), dtype=float)
             correlation = np.zeros((n_signals, n_signals), dtype=float)
@@ -264,48 +252,18 @@ def tds_dpcca_worker(
 
             for w in range(n_windows):
                 start_pos = start_window[w]  # start of current window
-                if lag >= 0:
-                    global_end = min(start_pos + s_val, n - lag)  # global end with lag
-                    if start_pos >= global_end:
-                        continue
-                    local_end = s_val - lag  # local end with lag
-                    if local_end <= 0:
-                        continue
+                start_pos_lag = start_pos + lag
+                if start_pos_lag < 0 or start_pos_lag + s_val > n:
+                    continue
 
-                    intersection_lenght = min(
-                        global_end - start_pos, local_end
-                    )  # points for analyse
-                    if intersection_lenght <= 0:
-                        continue
-
-                    shift_sig = 0  # signal without lag
-                    shift_sig_lag = lag  # signal with lag
-                else:
-                    global_start = max(
-                        start_pos, start_pos - lag
-                    )  # global start for lag<0:(0 or 0--3=3)
-                    global_end = start_pos + s_val  # global ennd
-                    if global_start >= global_end:
-                        continue
-
-                    intersection_lenght = global_end - global_start
-                    if intersection_lenght <= 0:
-                        continue
-                    shift_sig = -lag
-                    shift_sig_lag = 0
-
-                signal_windows = np.zeros((n_signals, intersection_lenght), dtype=float)
-                signal_lag_windows = np.zeros(
-                    (n_signals, intersection_lenght), dtype=float
-                )
+                signal_windows = np.zeros((n_signals, s_val), dtype=float)
+                signal_lag_windows = np.zeros((n_signals, s_val), dtype=float)
 
                 detrend = True
                 for sig_idx in range(n_signals):
-                    data_true = signal_view[
-                        sig_idx, w, shift_sig : shift_sig + intersection_lenght
-                    ]  # data without lag in w[index]-window, points for analyse
-                    data_lag_true = signal_view[
-                        sig_idx, w, shift_sig_lag : intersection_lenght + shift_sig_lag
+                    data_true = signal_view[sig_idx, w, :]
+                    data_lag_true = cumsum_arr[
+                        sig_idx, start_pos_lag : start_pos_lag + s_val
                     ]  # data with lag
                     detrended_true = _detrend(data_true, pd)
                     detrended_lag = _detrend(data_lag_true, pd)

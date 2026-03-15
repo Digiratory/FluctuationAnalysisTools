@@ -156,7 +156,7 @@ def create_signal_pair():
 
         x = Z_full[:-true_lag]
         y = Z_full[true_lag:]
-        signals[h] = np.vstack([y, x])
+        signals[h] = np.vstack([x, y])
     return signals
 
 
@@ -168,7 +168,7 @@ def test_tdc_dpcca_lags(create_signal_pair, h):
     step = 1
     pd = 1
     n_integral = 0
-    true_lag = -6
+    true_lag = 6
     p, r, f = tds_dpcca_worker(
         s=s,
         arr=arr,
@@ -178,7 +178,7 @@ def test_tdc_dpcca_lags(create_signal_pair, h):
         max_time_delay=abs(true_lag),
         n_integral=n_integral,
     )
-    lags_arr = np.arange(true_lag, -true_lag + 1)
+    lags_arr = np.arange(-true_lag, true_lag + 1)
     for s_idx in range(len(s)):
         correlation = r[:, s_idx, 0, 1]
         max_lag_idx = np.argmax(correlation)
@@ -193,8 +193,8 @@ def test_dpcca_with_time_lag(create_signal_pair, h):
     step = 1
     pd = 1
     n_integral = 0
-    true_lag = -6
-    lags_arr = np.arange(true_lag, -true_lag + 1)
+    true_lag = 6
+    lags_arr = np.arange(-true_lag, true_lag + 1)
     p, r, f, s_current = dpcca(
         arr,
         pd,
