@@ -315,12 +315,3 @@ def test_dfa_s_values_empty():
     custom_s = []
     with pytest.raises(ValueError, match="Input s_values is empty."):
         dfa(dataset=data_2d, degree=2, s_values=custom_s)
-
-
-def test_dfa_s_values_empty():
-    np.random.seed(42)
-    data_2d = generate_fbn(hurst=0.5, length=1000, method="kasdin")
-    # must raise ValueError("Input s_values is empty.")
-    custom_s = []
-    with pytest.raises(ValueError, match="Input s_values is empty."):
-        dfa(dataset=data_2d, degree=2, s_values=custom_s)
