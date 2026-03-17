@@ -1,6 +1,6 @@
 import time
 import warnings
-from collections.abc import Iterable
+from collections.abc import Sequence
 from contextlib import closing
 from ctypes import c_double
 from functools import partial
@@ -134,7 +134,7 @@ def dfa(
     degree: int = 2,
     processes: int = 1,
     n_integral: int = 1,
-    s_values: Union[int, Iterable, None] = None,
+    s_values: Union[int, Sequence, None] = None,
     s_min: int = 5,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -148,7 +148,7 @@ def dfa(
         degree (int): Polynomial degree for detrending (default: 2).
         processes (int): Number of parallel workers (default: 1).
         n_integral (int): Number of cumulative sum operations to apply (default: 1).
-        s_values (Union[int, Iterable, None]): points where  fluctuation function F^2(s) is calculated (default: None).
+        s_values (Union[int, Sequence, None]): points where  fluctuation function F^2(s) is calculated (default: None).
         s_min (int): Minimal scale in s_values (default: 5).
 
     Returns:
@@ -178,7 +178,7 @@ def dfa(
         s_values = [
             int(exp(step)) for step in np.arange(np.log(s_min), np.log(s_max), 0.5)
         ]
-    elif isinstance(s_values, Iterable):
+    elif isinstance(s_values, Sequence):
         init_s_len = len(s_values)
         if init_s_len < 1:
             raise ValueError("Input s_values is empty.")
