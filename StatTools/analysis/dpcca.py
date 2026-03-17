@@ -206,13 +206,13 @@ def tds_dpcca_worker(
 
     """
 
-    if max_time_delay is None:
-        return dpcca_worker(s, arr, step, pd, gc_params, n_integral=n_integral)
+    # if max_time_delay is None:
+    #     return dpcca_worker(s, arr, step, pd, gc_params, n_integral=n_integral)
 
     s_list = [s] if isinstance(s, int) else list(s)
 
     if time_delays is not None:
-        time_delay_list = np.arange(-time_delays, time_delays + 1, dtype=int)
+        time_delay_list = time_delays
     elif max_time_delay is not None:
         time_delay_list = np.arange(-max_time_delay, max_time_delay + 1, dtype=int)
     else:
@@ -282,9 +282,9 @@ def tds_dpcca_worker(
                 if detrend is False:
                     continue  # if hasn't enougth data in current window for detrend->skip this window
 
-                covariation = _covariation(signal_windows, signal_lag_windows)
-                correlation = _correlation(covariation)
-                cross_correlation = _cross_correlation(correlation)
+            covariation = _covariation(signal_windows, signal_lag_windows)
+            correlation = _correlation(covariation)
+            cross_correlation = _cross_correlation(correlation)
             f[lag_index, s_i] = covariation
             r[lag_index, s_i] = correlation
             p[lag_index, s_i] = cross_correlation
@@ -305,6 +305,7 @@ def dpcca(
     step: float,
     s: Union[int, Iterable],
     max_lag=None,
+    time_delays=None,
     buffer=None,
     gc_params: tuple = None,
     short_vectors: bool = False,
@@ -357,57 +358,6 @@ def dpcca(
             stacklevel=2,
         )
 
-    if max_lag is not None:
-        concatenate_all = False  # concatenate if 1d array , no need to use 3d P, R, F
-        if arr.ndim == 1:
-            arr = np.array([arr])
-            concatenate_all = True
-
-        if isinstance(s, Iterable):
-            init_s_len = len(s)
-
-            s = list(filter(lambda x: x <= arr.shape[1] / 4, s))
-            if len(s) < 1:
-                raise ValueError(
-                    "All input S values are larger than vector shape / 4 !"
-                )
-
-            if len(s) != init_s_len:
-                print(f"\tDPCAA warning: only following S values are in use: {s}")
-
-        elif isinstance(s, (float, int)):
-            if s > arr.shape[1] / 4:
-                raise ValueError("Cannot use S > L / 4")
-            s = (s,)
-
-        if max_lag is not None:
-            p, r, f = tds_dpcca_worker(
-                s,
-                arr,
-                step,
-                pd,
-                time_delays=None,
-                max_time_delay=max_lag,
-                gc_params=gc_params,
-                n_integral=n_integral,
-            )
-
-            if concatenate_all:
-                return concatenate_3d_matrices(p, r, f) + (s,)
-            else:
-                return p, r, f, s
-
-    if short_vectors:
-        return dpcca_worker(
-            s,
-            arr,
-            step,
-            pd,
-            gc_params=gc_params,
-            short_vectors=True,
-            n_integral=n_integral,
-        ) + (s,)
-
     concatenate_all = False  # concatenate if 1d array , no need to use 3d P, R, F
     if arr.ndim == 1:
         arr = np.array([arr])
@@ -427,6 +377,37 @@ def dpcca(
         if s > arr.shape[1] / 4:
             raise ValueError("Cannot use S > L / 4")
         s = (s,)
+
+    if max_lag is not None or (time_delays is not None):
+        print(max_lag, time_delays)
+
+        print("DO TDS")
+        p, r, f = tds_dpcca_worker(
+            s,
+            arr,
+            step,
+            pd,
+            time_delays=time_delays,
+            max_time_delay=max_lag,
+            gc_params=gc_params,
+            n_integral=n_integral,
+        )
+
+        if concatenate_all:
+            return concatenate_3d_matrices(p, r, f) + (s,)
+        else:
+            return p, r, f, s
+
+    if short_vectors:
+        return dpcca_worker(
+            s,
+            arr,
+            step,
+            pd,
+            gc_params=gc_params,
+            short_vectors=True,
+            n_integral=n_integral,
+        ) + (s,)
 
     if processes == 1 or len(s) == 1:
         p, r, f = dpcca_worker(
