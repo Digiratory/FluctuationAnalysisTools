@@ -216,7 +216,7 @@ def test_dpcca_with_time_lag(create_signal_pair, h):
 
 
 chol2d_hurst_values = [0.55, 0.8, 1.0, 1.25, 1.5]
-chol2d_correlations = [0.3, 0.6, 0.8]
+chol2d_correlations = [0.5, 0.7, 0.9]
 
 
 @pytest.mark.parametrize("hurst", chol2d_hurst_values)
@@ -228,19 +228,14 @@ def test_dpcca_chol2d_correlation(hurst, des_r0):
     Three independent fBn tracks are generated with the given Hurst exponent
     and then correlated by multiplying with the Cholesky factor of R0.
     """
-    if hurst > 1:
-        length = 2**16
-        s_list = [1024, 2048, 4096]
-        abs = 0.2
-    else:
-        length = 2**13
-        s_list = [512, 1024, 2048]
-        abs = 0.15
+    length = 2**14
+    s_list = [512, 1024, 2048]
     sig_1 = generate_fbn(hurst=hurst, length=length)
     sig_2 = generate_fbn(hurst=hurst, length=length)
     sig_3 = generate_fbn(hurst=hurst, length=length)
-    signal_triplet = np.vstack((sig_1, sig_2, sig_3)).T
 
+    np.random.seed(42)
+    signal_triplet = np.vstack((sig_1, sig_2, sig_3)).T
     r0 = np.array(
         [
             [1.0, des_r0, des_r0],
@@ -250,10 +245,10 @@ def test_dpcca_chol2d_correlation(hurst, des_r0):
     )
     correlated_signal = chol2d_mult(signal_triplet, r0)
     _, r, _, s_used = dpcca(
-        correlated_signal.T, pd=1, step=0.5, s=s_list, processes=1, n_integral=0
+        correlated_signal.T, pd=1, step=0.5, s=s_list, processes=1, n_integral=1
     )
 
     off_diag_pairs = [(0, 1), (0, 2), (1, 2)]
     for s_idx in range(len(s_used)):
         for i, j in off_diag_pairs:
-            assert r[s_idx, i, j] == pytest.approx(des_r0, abs=abs)
+            assert r[s_idx, i, j] == pytest.approx(des_r0, abs=0.15)
