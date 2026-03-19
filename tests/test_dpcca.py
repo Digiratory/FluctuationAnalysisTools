@@ -3,6 +3,8 @@ import pytest
 from scipy import signal, stats
 
 from StatTools.analysis.dpcca import dpcca, tds_dpcca_worker
+from StatTools.generators import generate_fbn
+from StatTools.generators.multi_scale_fractional_generator import chol2d_mult
 
 testdata = [
     (1.0),
@@ -47,7 +49,7 @@ def test_dpcca_default(sample_signal, h):
     threads = 4
     sig = sample_signal[h]
 
-    p1, r1, f1, s1 = dpcca(sig, 2, step, s, processes=threads)
+    _, _, f1, s1 = dpcca(sig, 2, step, s, processes=threads)
     f1 = np.sqrt(f1)
     res = stats.linregress(np.log(s1), np.log(f1))
 
@@ -65,7 +67,7 @@ def test_dpcca_default_buffer(sample_signal, h):
     threads = 4
     sig = sample_signal[h]
 
-    p1, r1, f1, s1 = dpcca(sig, 2, step, s, processes=threads, buffer=True)
+    _, _, f1, s1 = dpcca(sig, 2, step, s, processes=threads, buffer=True)
     f1 = np.sqrt(f1)
     res = stats.linregress(np.log(s1), np.log(f1))
     assert res.slope == pytest.approx(h, 0.1)
@@ -80,7 +82,7 @@ def test_dpcca_cumsum_0_default(sample_signal, h):
     sig = sample_signal[h]
 
     sig = np.cumsum(sig, axis=0)
-    p1, r1, f1, s1 = dpcca(sig, 2, step, s, processes=threads, n_integral=0)
+    _, _, f1, s1 = dpcca(sig, 2, step, s, processes=threads, n_integral=0)
     f1 = np.sqrt(f1)
     res = stats.linregress(np.log(s1), np.log(f1))
     assert res.slope == pytest.approx(h, 0.1)
@@ -95,9 +97,7 @@ def test_dpcca_cumsum_0_buffer(sample_signal, h):
     sig = sample_signal[h]
 
     sig = np.cumsum(sig, axis=0)
-    p1, r1, f1, s1 = dpcca(
-        sig, 2, step, s, processes=threads, buffer=True, n_integral=0
-    )
+    _, _, f1, s1 = dpcca(sig, 2, step, s, processes=threads, buffer=True, n_integral=0)
     f1 = np.sqrt(f1)
     res = stats.linregress(np.log(s1), np.log(f1))
     assert res.slope == pytest.approx(h, 0.1)
@@ -110,7 +110,7 @@ def test_dpcca_cumsum_2_default(sample_signal, h):
     step = 0.5
     threads = 4
     sig = sample_signal[h]
-    p1, r1, f1, s1 = dpcca(sig, 2, step, s, processes=threads, n_integral=2)
+    _, _, f1, s1 = dpcca(sig, 2, step, s, processes=threads, n_integral=2)
     f1 = np.sqrt(f1)
     res = stats.linregress(np.log(s1), np.log(f1))
     assert res.slope == pytest.approx(h + 1, 0.1)
@@ -123,9 +123,7 @@ def test_dpcca_cumsum_2_buffer(sample_signal, h):
     step = 0.5
     threads = 4
     sig = sample_signal[h]
-    p1, r1, f1, s1 = dpcca(
-        sig, 2, step, s, processes=threads, buffer=True, n_integral=2
-    )
+    _, _, f1, s1 = dpcca(sig, 2, step, s, processes=threads, buffer=True, n_integral=2)
     f1 = np.sqrt(f1)
     res = stats.linregress(np.log(s1), np.log(f1))
     assert res.slope == pytest.approx(h + 1, 0.1)
@@ -169,7 +167,7 @@ def test_tdc_dpcca_lags(create_signal_pair, h):
     pd = 1
     n_integral = 0
     true_lag = -6
-    p, r, f = tds_dpcca_worker(
+    _, r, _ = tds_dpcca_worker(
         s=s,
         arr=arr,
         step=step,
@@ -195,7 +193,7 @@ def test_dpcca_with_time_lag(create_signal_pair, h):
     n_integral = 0
     true_lag = -6
     lags_arr = np.arange(true_lag, -true_lag + 1)
-    p, r, f, s_current = dpcca(
+    _, r, _, s_current = dpcca(
         arr,
         pd,
         step,
@@ -211,3 +209,40 @@ def test_dpcca_with_time_lag(create_signal_pair, h):
         max_lag_idx = np.argmax(correlation)
         estimated_lag = lags_arr[max_lag_idx]
         assert abs(estimated_lag - true_lag) <= 1
+
+
+chol2d_hurst_values = [0.55, 0.8, 1.0, 1.25, 1.5]
+chol2d_correlations = [0.5, 0.7, 0.9]
+
+
+@pytest.mark.parametrize("hurst", chol2d_hurst_values)
+@pytest.mark.parametrize("des_r0", chol2d_correlations)
+def test_dpcca_chol2d_correlation(hurst, des_r0):
+    """Verify that DPCCA recovers the off-diagonal entries of a known 3x3
+    correlation matrix imposed via chol2d_mult.
+
+    Three independent fBn tracks are generated with the given Hurst exponent
+    and then correlated by multiplying with the Cholesky factor of R0.
+    """
+    length = 2**14
+    s_list = [512, 1024, 2048]
+    sig_1 = generate_fbn(hurst=hurst, length=length)
+    sig_2 = generate_fbn(hurst=hurst, length=length)
+    sig_3 = generate_fbn(hurst=hurst, length=length)
+
+    np.random.seed(42)
+    signal_triplet = np.vstack((sig_1, sig_2, sig_3)).T
+    r0 = np.array(
+        [
+            [1.0, des_r0, des_r0],
+            [des_r0, 1.0, des_r0],
+            [des_r0, des_r0, 1.0],
+        ]
+    )
+    correlated_signal = chol2d_mult(signal_triplet, r0)
+    _, r, _, _ = dpcca(
+        correlated_signal.T, pd=1, step=0.5, s=s_list, processes=1, n_integral=1
+    )
+
+    for r_pred in r:
+        np.testing.assert_allclose(r0, r_pred, atol=0.2)
