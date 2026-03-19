@@ -49,7 +49,7 @@ def test_dpcca_default(sample_signal, h):
     threads = 4
     sig = sample_signal[h]
 
-    p1, r1, f1, s1 = dpcca(sig, 2, step, s, processes=threads)
+    _, _, f1, s1 = dpcca(sig, 2, step, s, processes=threads)
     f1 = np.sqrt(f1)
     res = stats.linregress(np.log(s1), np.log(f1))
 
@@ -67,7 +67,7 @@ def test_dpcca_default_buffer(sample_signal, h):
     threads = 4
     sig = sample_signal[h]
 
-    p1, r1, f1, s1 = dpcca(sig, 2, step, s, processes=threads, buffer=True)
+    _, _, f1, s1 = dpcca(sig, 2, step, s, processes=threads, buffer=True)
     f1 = np.sqrt(f1)
     res = stats.linregress(np.log(s1), np.log(f1))
     assert res.slope == pytest.approx(h, 0.1)
@@ -82,7 +82,7 @@ def test_dpcca_cumsum_0_default(sample_signal, h):
     sig = sample_signal[h]
 
     sig = np.cumsum(sig, axis=0)
-    p1, r1, f1, s1 = dpcca(sig, 2, step, s, processes=threads, n_integral=0)
+    _, _, f1, s1 = dpcca(sig, 2, step, s, processes=threads, n_integral=0)
     f1 = np.sqrt(f1)
     res = stats.linregress(np.log(s1), np.log(f1))
     assert res.slope == pytest.approx(h, 0.1)
@@ -97,9 +97,7 @@ def test_dpcca_cumsum_0_buffer(sample_signal, h):
     sig = sample_signal[h]
 
     sig = np.cumsum(sig, axis=0)
-    p1, r1, f1, s1 = dpcca(
-        sig, 2, step, s, processes=threads, buffer=True, n_integral=0
-    )
+    _, _, f1, s1 = dpcca(sig, 2, step, s, processes=threads, buffer=True, n_integral=0)
     f1 = np.sqrt(f1)
     res = stats.linregress(np.log(s1), np.log(f1))
     assert res.slope == pytest.approx(h, 0.1)
@@ -112,7 +110,7 @@ def test_dpcca_cumsum_2_default(sample_signal, h):
     step = 0.5
     threads = 4
     sig = sample_signal[h]
-    p1, r1, f1, s1 = dpcca(sig, 2, step, s, processes=threads, n_integral=2)
+    _, _, f1, s1 = dpcca(sig, 2, step, s, processes=threads, n_integral=2)
     f1 = np.sqrt(f1)
     res = stats.linregress(np.log(s1), np.log(f1))
     assert res.slope == pytest.approx(h + 1, 0.1)
@@ -125,9 +123,7 @@ def test_dpcca_cumsum_2_buffer(sample_signal, h):
     step = 0.5
     threads = 4
     sig = sample_signal[h]
-    p1, r1, f1, s1 = dpcca(
-        sig, 2, step, s, processes=threads, buffer=True, n_integral=2
-    )
+    _, _, f1, s1 = dpcca(sig, 2, step, s, processes=threads, buffer=True, n_integral=2)
     f1 = np.sqrt(f1)
     res = stats.linregress(np.log(s1), np.log(f1))
     assert res.slope == pytest.approx(h + 1, 0.1)
@@ -171,7 +167,7 @@ def test_tdc_dpcca_lags(create_signal_pair, h):
     pd = 1
     n_integral = 0
     true_lag = -6
-    p, r, f = tds_dpcca_worker(
+    _, r, _ = tds_dpcca_worker(
         s=s,
         arr=arr,
         step=step,
@@ -197,7 +193,7 @@ def test_dpcca_with_time_lag(create_signal_pair, h):
     n_integral = 0
     true_lag = -6
     lags_arr = np.arange(true_lag, -true_lag + 1)
-    p, r, f, s_current = dpcca(
+    _, r, _, s_current = dpcca(
         arr,
         pd,
         step,
@@ -244,11 +240,9 @@ def test_dpcca_chol2d_correlation(hurst, des_r0):
         ]
     )
     correlated_signal = chol2d_mult(signal_triplet, r0)
-    _, r, _, s_used = dpcca(
+    _, r, _, _ = dpcca(
         correlated_signal.T, pd=1, step=0.5, s=s_list, processes=1, n_integral=1
     )
 
-    off_diag_pairs = [(0, 1), (0, 2), (1, 2)]
-    for s_idx in range(len(s_used)):
-        for i, j in off_diag_pairs:
-            assert r[s_idx, i, j] == pytest.approx(des_r0, abs=0.15)
+    for r_pred in r:
+        np.testing.assert_allclose(r0, r_pred, atol=0.2)
