@@ -3,6 +3,8 @@ import pytest
 from scipy import signal, stats
 
 from StatTools.analysis.dpcca import dpcca, tds_dpcca_worker
+from StatTools.generators import generate_fbn
+from StatTools.generators.multi_scale_fractional_generator import chol2d_mult
 
 testdata = [
     (1.0),
@@ -47,7 +49,7 @@ def test_dpcca_default(sample_signal, h):
     threads = 4
     sig = sample_signal[h]
 
-    p1, r1, f1, s1 = dpcca(sig, 2, step, s, processes=threads)
+    _, _, f1, s1 = dpcca(sig, 2, step, s, processes=threads)
     f1 = np.sqrt(f1)
     res = stats.linregress(np.log(s1), np.log(f1))
 
@@ -65,7 +67,7 @@ def test_dpcca_default_buffer(sample_signal, h):
     threads = 4
     sig = sample_signal[h]
 
-    p1, r1, f1, s1 = dpcca(sig, 2, step, s, processes=threads, buffer=True)
+    _, _, f1, s1 = dpcca(sig, 2, step, s, processes=threads, buffer=True)
     f1 = np.sqrt(f1)
     res = stats.linregress(np.log(s1), np.log(f1))
     assert res.slope == pytest.approx(h, 0.1)
@@ -80,7 +82,7 @@ def test_dpcca_cumsum_0_default(sample_signal, h):
     sig = sample_signal[h]
 
     sig = np.cumsum(sig, axis=0)
-    p1, r1, f1, s1 = dpcca(sig, 2, step, s, processes=threads, n_integral=0)
+    _, _, f1, s1 = dpcca(sig, 2, step, s, processes=threads, n_integral=0)
     f1 = np.sqrt(f1)
     res = stats.linregress(np.log(s1), np.log(f1))
     assert res.slope == pytest.approx(h, 0.1)
@@ -95,9 +97,7 @@ def test_dpcca_cumsum_0_buffer(sample_signal, h):
     sig = sample_signal[h]
 
     sig = np.cumsum(sig, axis=0)
-    p1, r1, f1, s1 = dpcca(
-        sig, 2, step, s, processes=threads, buffer=True, n_integral=0
-    )
+    _, _, f1, s1 = dpcca(sig, 2, step, s, processes=threads, buffer=True, n_integral=0)
     f1 = np.sqrt(f1)
     res = stats.linregress(np.log(s1), np.log(f1))
     assert res.slope == pytest.approx(h, 0.1)
@@ -110,7 +110,7 @@ def test_dpcca_cumsum_2_default(sample_signal, h):
     step = 0.5
     threads = 4
     sig = sample_signal[h]
-    p1, r1, f1, s1 = dpcca(sig, 2, step, s, processes=threads, n_integral=2)
+    _, _, f1, s1 = dpcca(sig, 2, step, s, processes=threads, n_integral=2)
     f1 = np.sqrt(f1)
     res = stats.linregress(np.log(s1), np.log(f1))
     assert res.slope == pytest.approx(h + 1, 0.1)
@@ -123,9 +123,7 @@ def test_dpcca_cumsum_2_buffer(sample_signal, h):
     step = 0.5
     threads = 4
     sig = sample_signal[h]
-    p1, r1, f1, s1 = dpcca(
-        sig, 2, step, s, processes=threads, buffer=True, n_integral=2
-    )
+    _, _, f1, s1 = dpcca(sig, 2, step, s, processes=threads, buffer=True, n_integral=2)
     f1 = np.sqrt(f1)
     res = stats.linregress(np.log(s1), np.log(f1))
     assert res.slope == pytest.approx(h + 1, 0.1)
