@@ -181,30 +181,3 @@ def test_tdc_dpcca_lags(create_signal_pair, h):
         max_lag_idx = np.argmax(correlation)
         estimated_lag = time_delays[max_lag_idx]
         assert abs(estimated_lag - (-true_lag)) <= 10
-
-
-@pytest.mark.parametrize("h", hurst_values)
-def test_dpcca_with_time_lag(create_signal_pair, h):
-    arr = create_signal_pair[h]
-    s = [256, 512, 1024]
-    step = 1
-    pd = 2
-    n_integral = 1
-    true_lag = 50
-    lags_arr = [-60, -50, -40, 0, 40, 50, 60]
-    p, r, f, s_current = dpcca(
-        arr,
-        pd,
-        step,
-        s,
-        time_delays=lags_arr,
-        buffer=False,
-        gc_params=None,
-        n_integral=n_integral,
-        processes=1,
-    )
-    for s_idx in range(len(s_current)):
-        correlation = r[:, s_idx, :, :]
-        max_lag_idx = np.argmax(correlation)
-        estimated_lag = lags_arr[max_lag_idx]
-        assert abs(estimated_lag - (-true_lag)) <= 10

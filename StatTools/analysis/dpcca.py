@@ -197,7 +197,6 @@ def tds_dpcca_worker(
 
     n_lags = len(time_delay_list)
     n_signals, n = arr.shape
-    # n_s=len(s_list)
 
     cumsum_arr = arr
     for _ in range(n_integral):
@@ -368,9 +367,7 @@ def dpcca(
         s = (s,)
 
     if max_lag is not None or (time_delays is not None):
-        print(max_lag, time_delays)
 
-        print("DO TDS")
         p, r, f = tds_dpcca_worker(
             s,
             arr,
