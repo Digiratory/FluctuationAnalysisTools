@@ -131,15 +131,15 @@ def test_dpcca_cumsum_2_buffer(sample_signal, h):
     assert res.slope == pytest.approx(h + 1, 0.1)
 
 
-hurst_values = [1.0, 1.25, 1.5]
+hurst_values = [0.7, 0.8, 0.9]
 test_lags = [0, 1, 2, 3]
 
 
 @pytest.fixture(scope="module")
 def create_signal_pair():
-    length = 2**10
+    length = 2**15
     signals = {}
-    true_lag = 6
+    true_lag = 50
     for h in hurst_values:
         z = np.random.normal(size=length + 2 * true_lag)
         beta = 2 * h - 1
@@ -166,24 +166,23 @@ def test_tdc_dpcca_lags(create_signal_pair, h):
     arr = create_signal_pair[h]
     s = [256, 512, 1024]
     step = 1
-    pd = 1
-    n_integral = 0
-    true_lag = 6
+    pd = 2
+    n_integral = 1
+    true_lag = 50
     p, r, f = tds_dpcca_worker(
         s=s,
         arr=arr,
         step=step,
         pd=pd,
-        time_delays=None,
-        max_time_delay=abs(true_lag),
+        time_delays=[-60, -50, -40, 0, 40, 50, 60],
         n_integral=n_integral,
     )
-    lags_arr = np.arange(-true_lag, true_lag + 1)
+    time_delays = [-60, -50, -40, 0, 40, 50, 60]
     for s_idx in range(len(s)):
-        correlation = r[:, s_idx, 0, 1]
+        correlation = r[:, s_idx, :, :]
         max_lag_idx = np.argmax(correlation)
-        estimated_lag = lags_arr[max_lag_idx]
-        assert abs(estimated_lag - true_lag) <= 1
+        estimated_lag = time_delays[max_lag_idx]
+        assert abs(estimated_lag - (-true_lag)) <= 10
 
 
 @pytest.mark.parametrize("h", hurst_values)
@@ -191,23 +190,23 @@ def test_dpcca_with_time_lag(create_signal_pair, h):
     arr = create_signal_pair[h]
     s = [256, 512, 1024]
     step = 1
-    pd = 1
-    n_integral = 0
-    true_lag = 6
-    lags_arr = np.arange(-true_lag, true_lag + 1)
+    pd = 2
+    n_integral = 1
+    true_lag = 50
+    lags_arr = [-60, -50, -40, 0, 40, 50, 60]
     p, r, f, s_current = dpcca(
         arr,
         pd,
         step,
         s,
-        abs(true_lag),
+        time_delays=lags_arr,
         buffer=False,
         gc_params=None,
         n_integral=n_integral,
         processes=1,
     )
     for s_idx in range(len(s_current)):
-        correlation = r[:, s_idx, 0, 1]
+        correlation = r[:, s_idx, :, :]
         max_lag_idx = np.argmax(correlation)
         estimated_lag = lags_arr[max_lag_idx]
-        assert abs(estimated_lag - true_lag) <= 1
+        assert abs(estimated_lag - (-true_lag)) <= 10

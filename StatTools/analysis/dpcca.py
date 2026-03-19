@@ -24,21 +24,6 @@ def _covariation_single_signal(signal: np.ndarray):
     return F
 
 
-def _covariation(signal_1: np.ndarray, signal_2: np.ndarray = None):
-    """
-    Implementation equation (4) from [1]
-
-    [1] Yuan, N., Fu, Z., Zhang, H. et al. Detrended Partial-Cross-Correlation Analysis: A New Method for Analyzing Correlations in Complex System. Sci Rep 5, 8143 (2015). https://doi.org/10.1038/srep08143
-    """
-    if signal_2 is None:
-        return _covariation_single_signal(signal_1)
-    F = np.zeros((signal_1.shape[0], signal_1.shape[0]), dtype=float)
-    for n in range(signal_1.shape[0]):
-        for m in range(signal_2.shape[0]):
-            F[n][m] = np.mean(signal_1[n] * signal_2[m])
-    return F
-
-
 def _correlation(F: np.ndarray):
     """
     Implementation equation (6) from [1]
@@ -52,7 +37,7 @@ def _correlation(F: np.ndarray):
     return R
 
 
-def _cross_correlation(R: np.ndarray):
+def _partial_correlation(R: np.ndarray):
     """
     Implementation equation (9) from [1]
     [1] Yuan, N., Fu, Z., Zhang, H. et al. Detrended Partial-Cross-Correlation Analysis: A New Method for Analyzing Correlations in Complex System. Sci Rep 5, 8143 (2015). https://doi.org/10.1038/srep08143
@@ -83,15 +68,10 @@ def _detrend(current_signal: np.ndarray, pd: np.int32):
     """
     current_signal = np.asarray(current_signal, dtype=np.float64)
     n = len(current_signal)
-    if n < pd + 2:
-        return None
     xw = np.arange(n, dtype=np.int32)
-    try:
-        p_fit = np.polyfit(xw, current_signal, deg=pd, rcond=None)
-        z_fit = np.polyval(p_fit, xw)
-        return current_signal - z_fit
-    except np.linalg.LinAlgError:
-        return None
+    p_fit = np.polyfit(xw, current_signal, deg=pd, rcond=None)
+    z_fit = np.polyval(p_fit, xw)
+    return current_signal - z_fit
 
 
 # @profile()
@@ -155,9 +135,9 @@ def dpcca_worker(
 
         Y = np.array([np.concatenate(Y[i]) for i in range(Y.shape[0])])
 
-        F[s_i] = _covariation(Y)
+        F[s_i] = _covariation_single_signal(Y)
         R[s_i] = _correlation(F[s_i])
-        P[s_i] = _cross_correlation(R[s_i])
+        P[s_i] = _partial_correlation(R[s_i])
 
     return P, R, F
 
@@ -206,9 +186,6 @@ def tds_dpcca_worker(
 
     """
 
-    # if max_time_delay is None:
-    #     return dpcca_worker(s, arr, step, pd, gc_params, n_integral=n_integral)
-
     s_list = [s] if isinstance(s, int) else list(s)
 
     if time_delays is not None:
@@ -220,10 +197,19 @@ def tds_dpcca_worker(
 
     n_lags = len(time_delay_list)
     n_signals, n = arr.shape
+    # n_s=len(s_list)
 
     cumsum_arr = arr
     for _ in range(n_integral):
         cumsum_arr = np.cumsum(cumsum_arr, axis=1)
+
+    min_lag = min(time_delay_list)
+    max_lag = max(time_delay_list)
+    start_arr = max(0, -min_lag)  # value of points to be trimmed to array with lag
+    end_arr = max(0, max_lag)
+    if start_arr + end_arr >= n:
+        raise ValueError("need less time delay")
+    valid_arr_lag = n - start_arr - end_arr  # new size of array with time lags
 
     f = np.zeros((n_lags, len(s_list), n_signals, n_signals), dtype=np.float64)
     r = np.zeros((n_lags, len(s_list), n_signals, n_signals), dtype=np.float64)
@@ -231,64 +217,67 @@ def tds_dpcca_worker(
 
     for s_i, s_val in enumerate(s_list):
 
-        if s_val > n:
+        if s_val > valid_arr_lag:
             raise ValueError("Time window couldnt be larger then input data array")
+        step_s = int(step * s_val)
+        n_windows_arr = []
+        for lag in time_delay_list:
+            start = start_arr + lag
+            end = end_arr + valid_arr_lag  # shifted arr
+            if start >= 0 and end <= n:
+                lag_length = end - start
+                cur_window = (lag_length - s_val) // step_s + 1
+                n_windows_arr.append(cur_window)
+        n_windows = min(n_windows_arr)
+        if n_windows <= 0:
+            continue
 
-        start = np.arange(0, n - s_val + 1)  # all indecies of start time windows
-        start_window = start[:: int(step * s_val)]  # with step
-        n_windows = len(start_window)  # value of windows
-
-        signal_view = np.lib.stride_tricks.sliding_window_view(
-            cumsum_arr, window_shape=s_val, axis=1
-        )
-        signal_view = signal_view[
-            :, :: int(step * s_val), :
-        ]  # sliding window in time windows
+        all_windows = np.zeros(
+            (n_lags, n_signals, n_windows, s_val)
+        )  # arr for all windows with all lags
+        # all_windows.shape
 
         for lag_index, lag in enumerate(time_delay_list):
-            covariation = np.zeros((n_signals, n_signals), dtype=float)
-            correlation = np.zeros((n_signals, n_signals), dtype=float)
-            cross_correlation = np.zeros((n_signals, n_signals), dtype=float)
+            start = start_arr + lag
+            end = end_arr + valid_arr_lag  # shifted arr
+            if start < 0 or end > n:
+                continue
+            shifted_arr = cumsum_arr[:, start:end]
+            windows = np.lib.stride_tricks.sliding_window_view(
+                shifted_arr, window_shape=s_val, axis=1
+            )  # window of shifted data with step with lag
+            windows = windows[:, ::step_s, :]
+            if windows.shape[1] >= n_windows:
+                all_windows[lag_index, :, :, :] = windows[:, :n_windows, :]
+            else:
+                useful_window_shape = windows.shape[1]
+                all_windows[lag_index, :, :useful_window_shape, :] = windows[
+                    :, :useful_window_shape, :
+                ]
 
+            # all_windows.shape
+        common_windows = all_windows.reshape(n_lags * n_signals, n_windows, s_val)
+        detrended = np.zeros((n_lags * n_signals, n_windows * s_val))
+        for i in range(n_lags * n_signals):
+            position_idx = 0
             for w in range(n_windows):
-                start_pos = start_window[w]  # start of current window
-                start_pos_lag = start_pos + lag
-                if start_pos_lag < 0 or start_pos_lag + s_val > n:
-                    continue
+                detrend_data = _detrend(common_windows[i, w, :], pd)
+                if position_idx is not None:
+                    detrended[i, position_idx : position_idx + s_val] = detrend_data
+                position_idx += s_val
+        covariation = _covariation_single_signal(detrended)
+        correlation = _correlation(covariation)
+        partial_correlation = _partial_correlation(correlation)
 
-                signal_windows = np.zeros((n_signals, s_val), dtype=float)
-                signal_lag_windows = np.zeros((n_signals, s_val), dtype=float)
-
-                detrend = True
-                for sig_idx in range(n_signals):
-                    data_true = signal_view[sig_idx, w, :]
-                    data_lag_true = cumsum_arr[
-                        sig_idx, start_pos_lag : start_pos_lag + s_val
-                    ]  # data with lag
-                    detrended_true = _detrend(data_true, pd)
-                    detrended_lag = _detrend(data_lag_true, pd)
-
-                    if detrended_true is None or detrended_lag is None:
-                        detrend = False
-                        break
-
-                    signal_windows[sig_idx] = (
-                        detrended_true  # detrended signal without lag
-                    )
-                    signal_lag_windows[sig_idx] = (
-                        detrended_lag  # detrended signal with lag
-                    )
-
-                if detrend is False:
-                    continue  # if hasn't enougth data in current window for detrend->skip this window
-
-            covariation = _covariation(signal_windows, signal_lag_windows)
-            correlation = _correlation(covariation)
-            cross_correlation = _cross_correlation(correlation)
-            f[lag_index, s_i] = covariation
-            r[lag_index, s_i] = correlation
-            p[lag_index, s_i] = cross_correlation
-
+        covariation_lag = covariation.reshape(n_lags, n_signals, n_lags, n_signals)
+        correlation_lag = correlation.reshape(n_lags, n_signals, n_lags, n_signals)
+        partial_correlation_lag = partial_correlation.reshape(
+            n_lags, n_signals, n_lags, n_signals
+        )
+        for D in range(n_lags):
+            f[D, s_i, :, :] = covariation_lag[D, :, D, :]
+            r[D, s_i, :, :] = correlation_lag[D, :, D, :]
+            p[D, s_i, :, :] = partial_correlation_lag[D, :, D, :]
     return p, r, f
 
 
