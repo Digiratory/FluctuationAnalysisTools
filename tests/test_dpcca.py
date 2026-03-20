@@ -163,17 +163,14 @@ def create_signal_pair():
 def test_tdc_dpcca_lags(create_signal_pair, h):
     arr = create_signal_pair[h]
     s = [256, 512, 1024]
-    step = 20
-    pd = 2
-    n_integral = 1
     true_lag = 50
     p, r, f = tds_dpcca_worker(
         s=s,
         arr=arr,
-        step=step,
-        pd=pd,
+        step=20,
+        pd=2,
         time_delays=[-60, -50, -40, 0, 40, 50, 60],
-        n_integral=n_integral,
+        n_integral=1,
     )
     time_delays = [-60, -50, -40, 0, 40, 50, 60]
     for s_idx in range(len(s)):
