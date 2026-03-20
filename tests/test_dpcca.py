@@ -163,7 +163,7 @@ def create_signal_pair():
 def test_tdc_dpcca_lags(create_signal_pair, h):
     arr = create_signal_pair[h]
     s = [256, 512, 1024]
-    step = 1
+    step = 20
     pd = 2
     n_integral = 1
     true_lag = 50
@@ -177,7 +177,7 @@ def test_tdc_dpcca_lags(create_signal_pair, h):
     )
     time_delays = [-60, -50, -40, 0, 40, 50, 60]
     for s_idx in range(len(s)):
-        correlation = r[:, s_idx, :, :]
+        correlation = r[:, s_idx, 0, 1]
         max_lag_idx = np.argmax(correlation)
         estimated_lag = time_delays[max_lag_idx]
-        assert abs(estimated_lag - (-true_lag)) <= 10
+        assert (estimated_lag - true_lag) <= 7

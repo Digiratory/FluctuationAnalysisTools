@@ -222,11 +222,13 @@ def tds_dpcca_worker(
         n_windows_arr = []
         for lag in time_delay_list:
             start = start_arr + lag
-            end = end_arr + valid_arr_lag  # shifted arr
+            end = start + valid_arr_lag  # shifted arr
             if start >= 0 and end <= n:
                 lag_length = end - start
                 cur_window = (lag_length - s_val) // step_s + 1
                 n_windows_arr.append(cur_window)
+            else:
+                raise ValueError("min() iterable argument is empty")
         n_windows = min(n_windows_arr)
         if n_windows <= 0:
             continue
@@ -234,11 +236,10 @@ def tds_dpcca_worker(
         all_windows = np.zeros(
             (n_lags, n_signals, n_windows, s_val)
         )  # arr for all windows with all lags
-        # all_windows.shape
 
         for lag_index, lag in enumerate(time_delay_list):
             start = start_arr + lag
-            end = end_arr + valid_arr_lag  # shifted arr
+            end = start + valid_arr_lag  # shifted arr
             if start < 0 or end > n:
                 continue
             shifted_arr = cumsum_arr[:, start:end]
@@ -254,15 +255,13 @@ def tds_dpcca_worker(
                     :, :useful_window_shape, :
                 ]
 
-            # all_windows.shape
         common_windows = all_windows.reshape(n_lags * n_signals, n_windows, s_val)
         detrended = np.zeros((n_lags * n_signals, n_windows * s_val))
         for i in range(n_lags * n_signals):
             position_idx = 0
             for w in range(n_windows):
                 detrend_data = _detrend(common_windows[i, w, :], pd)
-                if position_idx is not None:
-                    detrended[i, position_idx : position_idx + s_val] = detrend_data
+                detrended[i, position_idx : position_idx + s_val] = detrend_data
                 position_idx += s_val
         covariation = _covariation_single_signal(detrended)
         correlation = _correlation(covariation)

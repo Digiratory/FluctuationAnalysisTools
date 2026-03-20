@@ -23,16 +23,14 @@ des_R0 = 0.89
 R0 = np.array([[1.0, des_R0], [des_R0, 1.0]])
 print(f"shape of signal:{signal.shape}")
 correlated_signal = chol2d_mult(signal, R0)
-print(f"correlated_signal:{correlated_signal} with {correlated_signal.shape}")
-# S = 2 ** np.arange(3, int(np.log2(length)) + 1)
 s_list = [256, 512, 960]
 for s_idx, s_val in enumerate(s_list):
     p, r, f, s = dpcca(
-        signal.T,
+        correlated_signal.T,
         pd=1,
         step=1,
         s=s_val,
         time_delays=[-60, -50, -40, 0, 40, 50, 60],
         n_integral=1,
     )
-    print(f"correlation matrix for current s value {s_list[s_idx]} with tds-dpcca:{f}")
+    print(f"correlation matrix for current s value {s_list[s_idx]} with tds-dpcca:{r}")
