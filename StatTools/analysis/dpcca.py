@@ -229,18 +229,30 @@ def dpcca(
         concatenate_all = True
 
     if isinstance(s, Iterable):
-        init_s_len = len(s)
+        s = list(s)
 
-        s = list(filter(lambda x: x <= arr.shape[1] / 4, s))
         if len(s) < 1:
-            raise ValueError("All input S values are larger than vector shape / 4 !")
+            raise ValueError("No input S values were provided!")
 
-        if len(s) != init_s_len:
-            print(f"\tDPCAA warning: only following S values are in use: {s}")
+        if any(x > arr.shape[1] for x in s):
+            raise ValueError(
+                f"Cannot use S > L. Got S={s}, L={arr.shape[1]}"
+            )
+
+        if any(x > arr.shape[1] / 4 for x in s):
+            print(
+                f"\tDPCCA warning: some S values exceed the recommended limit "
+                f"L / 4 = {arr.shape[1] / 4:.3f} and will still be used: {s}"
+            )
 
     elif isinstance(s, (float, int)):
+        if s > arr.shape[1]:
+            raise ValueError(f"Cannot use S > L. Got S={s}, L={arr.shape[1]}")
         if s > arr.shape[1] / 4:
-            raise ValueError("Cannot use S > L / 4")
+            print(
+                f"\tDPCCA warning: S={s} exceeds the recommended limit "
+                f"L / 4 = {arr.shape[1] / 4:.3f} and will still be used"
+            )
         s = (s,)
 
     if processes == 1 or len(s) == 1:
