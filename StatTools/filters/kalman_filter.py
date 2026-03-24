@@ -20,6 +20,28 @@ class KalmanFilter:
         Measurement noise matrix.
     _I : np.ndarray
         Identity matrix of shape (dim_x, dim_x).
+
+    Examples
+    --------
+    Constant-position model: 2D state (position, velocity),
+    1D measurement (position only).
+
+    >>> import numpy as np
+    >>> dt = 1.0
+    >>> kf = KalmanFilter(
+    ...     dim_x=2,
+    ...     dim_z=1,
+    ...     F=np.array([[1, dt], [0, 1]]),
+    ...     H=np.array([[1, 0]]),
+    ...     R=np.array([[5.0]]),
+    ...     Q=np.array([[0.1, 0.0], [0.0, 0.1]]),
+    ... )
+    >>> measurements = [1.1, 2.3, 3.0, 4.2, 5.1]
+    >>> for z in measurements:
+    ...     kf.predict()
+    ...     kf.adjust(np.array([[z]]))
+    >>> kf.get_current_state()   # [position, velocity]
+    >>> kf.get_current_measurement()  # filtered position, shape (1, 1)
     """
 
     def __init__(
@@ -95,11 +117,12 @@ class KalmanFilter:
         # S = HPH' + R
         S = self._H @ self._P @ self._H.T + self._R
         # Si = inv(S)
-        # K = PH'Si
-        K = self._P @ self._H.T @ np.linalg.inv(S)
+        # Instead of K = PH'Si used solve
+        K = np.linalg.solve(S, self._H @ self._P).T
         # x = x + Ky
         self._x = self._x + K @ y
         # Instead of P = (I - KH)P used Joseph form  P = (I - KH)P(I - KH)' + KRK'.
+        # https://en.wikipedia.org/wiki/Kalman_filter#Deriving_the_posteriori_estimate_covariance_matrix
         # Bucy, Richard S., and Peter D. Joseph. Filtering for stochastic processes with applications to guidance. Vol. 326. American Mathematical Soc., 2005.
         IKH = self._I - K @ self._H
         self._P = IKH @ self._P @ IKH.T + K @ self._R @ K.T
