@@ -12,20 +12,18 @@ length = 2**12
 # Generate fractional Brownian noise using the default Kasdin method
 sig_1 = generate_fbn(hurst=hurst, length=length)
 sig_2 = generate_fbn(hurst=hurst, length=length)
-print(sig_2.shape)
 
 s, F_s = dfa(sig_1, degree=2)
 ff_params, residuals = analyse_cross_ff_linregress(np.sqrt(F_s), s)
 print(f"estiamted Hurst value:{ff_params.slopes[0].value} true Hurst Value: {hurst}")
-
+lag = 250
 signal = np.vstack((sig_1, sig_2)).T
 des_R0 = 0.89
 R0 = np.array([[1.0, des_R0], [des_R0, 1.0]])
-print(f"shape of signal:{signal.shape}")
 correlated_signal = chol2d_mult(signal, R0)
-s_list = [256, 512, 960]
+s_list = [256, 512, 950]
 for s_idx, s_val in enumerate(s_list):
-    p, r, f, s = dpcca(
+    _, r, _, _ = dpcca(
         correlated_signal.T,
         pd=1,
         step=1,

@@ -129,7 +129,7 @@ def test_dpcca_cumsum_2_buffer(sample_signal, h):
     assert res.slope == pytest.approx(h + 1, 0.1)
 
 
-hurst_values = [0.7, 0.8, 0.9]
+hurst_values = [0.25, 0.5, 0.75]
 test_lags = [0, 1, 2, 3]
 
 
@@ -137,7 +137,7 @@ test_lags = [0, 1, 2, 3]
 def create_signal_pair():
     length = 2**15
     signals = {}
-    true_lag = 50
+    true_lag = 40
     for h in hurst_values:
         z = np.random.normal(size=length + 2 * true_lag)
         beta = 2 * h - 1
@@ -154,27 +154,27 @@ def create_signal_pair():
 
         x = Z_full[:-true_lag]
         y = Z_full[true_lag:]
-        signals[h] = np.vstack([x, y])
+        signals[h] = np.vstack([y, x])
     return signals
 
 
 @pytest.mark.parametrize("h", hurst_values)
 # @pytest.mark.parametrize("lag", test_lags)
-def test_tdc_dpcca_lags(create_signal_pair, h):
+def test_tds_dpcca_comparison_signals_worker(create_signal_pair, h):
     arr = create_signal_pair[h]
-    s = [256, 512, 1024]
-    true_lag = 50
-    p, r, f = tds_dpcca_worker(
-        s=s,
+    true_lag = 40
+    _, r, _ = tds_dpcca_worker(
+        s=[256, 512, 1024],
         arr=arr,
-        step=20,
-        pd=2,
-        time_delays=[-60, -50, -40, 0, 40, 50, 60],
+        step=10,
+        pd=1,
+        time_delays=[-60, -50, -40, -30, -20, -10, 0, 10, 20, 30, 40, 50, 60],
         n_integral=1,
     )
-    time_delays = [-60, -50, -40, 0, 40, 50, 60]
-    for s_idx in range(len(s)):
+    time_delays = [-60, -50, -40, -30, -20, -10, 0, 10, 20, 30, 40, 50, 60]
+    s = [256, 512, 1024]
+    for s_idx, s_val in enumerate(s):
         correlation = r[:, s_idx, 0, 1]
         max_lag_idx = np.argmax(correlation)
         estimated_lag = time_delays[max_lag_idx]
-        assert (estimated_lag - true_lag) <= 10
+        assert abs(estimated_lag - true_lag) <= 1

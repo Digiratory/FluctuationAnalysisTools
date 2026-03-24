@@ -43,7 +43,9 @@ def _partial_correlation(R: np.ndarray):
     [1] Yuan, N., Fu, Z., Zhang, H. et al. Detrended Partial-Cross-Correlation Analysis: A New Method for Analyzing Correlations in Complex System. Sci Rep 5, 8143 (2015). https://doi.org/10.1038/srep08143
     """
     P = np.zeros((R.shape[0], R.shape[0]), dtype=float)
-    Cinv = np.linalg.inv(R)
+    # justification: finding the inverse matrix with pinv (Moore-Penrose pseudo-inverse of a matrix)
+    # to avoid interaction with singular correlation matrix
+    Cinv = np.linalg.pinv(R)
     for n in range(R.shape[0]):
         for m in range(n + 1):
             if Cinv[n][n] * Cinv[m][m] < 0:
@@ -204,8 +206,8 @@ def tds_dpcca_worker(
 
     min_lag = min(time_delay_list)
     max_lag = max(time_delay_list)
-    start_arr = max(0, -min_lag)  # value of points to be trimmed to array with lag
-    end_arr = max(0, max_lag)
+    start_arr = max(0, -min_lag)  # value of points of data should be trimmed
+    end_arr = max(0, max_lag)  # value of points of data should be trimmed
     if start_arr + end_arr >= n:
         raise ValueError("need less time delay")
     valid_arr_lag = n - start_arr - end_arr  # new size of array with time lags
@@ -221,40 +223,59 @@ def tds_dpcca_worker(
         step_s = int(step * s_val)
         n_windows_arr = []
         for lag in time_delay_list:
-            start = start_arr + lag
-            end = start + valid_arr_lag  # shifted arr
-            if start >= 0 and end <= n:
-                lag_length = end - start
-                cur_window = (lag_length - s_val) // step_s + 1
-                n_windows_arr.append(cur_window)
+            len_lagged = valid_arr_lag - abs(lag)
+            if len_lagged > 0:
+                cur_window = (len_lagged - s_val) // step_s + 1
+                n_windows_arr.append(
+                    cur_window
+                )  # calculation value of windows for each lag
             else:
-                raise ValueError("min() iterable argument is empty")
-        n_windows = min(n_windows_arr)
+                n_windows_arr.append(0)
+
+        n_windows = min(n_windows_arr) if n_windows_arr else 0
         if n_windows <= 0:
             continue
-
-        all_windows = np.zeros(
-            (n_lags, n_signals, n_windows, s_val)
-        )  # arr for all windows with all lags
-
+        all_windows = np.zeros((n_lags, n_signals, n_windows, s_val))
         for lag_index, lag in enumerate(time_delay_list):
-            start = start_arr + lag
-            end = start + valid_arr_lag  # shifted arr
-            if start < 0 or end > n:
+            start_base_signal = start_arr
+            len_base_signal = valid_arr_lag
+
+            start_lagged_signal = start_arr + lag  # start position of shifted signal
+            len_lagged_signal = valid_arr_lag - abs(
+                lag
+            )  # valid length of analyzed data with lag
+            if start_lagged_signal < 0 or len_lagged_signal > n:
                 continue
-            shifted_arr = cumsum_arr[:, start:end]
+            min_len = min(
+                len_base_signal, len_lagged_signal
+            )  # valid length of analyzed data for each signal
+            if min_len < s_val:
+                continue
+            shifted_arr = np.zeros(
+                (n_signals, min_len)
+            )  # array for all signals with valid length
+            shifted_arr[0, :] = cumsum_arr[
+                0, start_base_signal : start_base_signal + min_len
+            ]  # signal without lag
+            for sig_idx in range(1, n_signals):
+                shifted_arr[sig_idx, :] = cumsum_arr[
+                    sig_idx, start_lagged_signal : start_lagged_signal + min_len
+                ]  # signals with lag in input array
+
             windows = np.lib.stride_tricks.sliding_window_view(
                 shifted_arr, window_shape=s_val, axis=1
             )  # window of shifted data with step with lag
             windows = windows[:, ::step_s, :]
-            if windows.shape[1] >= n_windows:
-                all_windows[lag_index, :, :, :] = windows[:, :n_windows, :]
-            else:
-                useful_window_shape = windows.shape[1]
-                all_windows[lag_index, :, :useful_window_shape, :] = windows[
-                    :, :useful_window_shape, :
-                ]
+            useful_windows = min(
+                windows.shape[1], n_windows
+            )  # find min between actual length and calculated for lag
 
+            if useful_windows > 0:
+                all_windows[lag_index, :, :useful_windows, :] = windows[
+                    :, :useful_windows, :
+                ]  # copy of windows with current lag to general array with data
+        if np.all(all_windows == 0):
+            continue  # if size of all windows<0: skip current s
         common_windows = all_windows.reshape(n_lags * n_signals, n_windows, s_val)
         detrended = np.zeros((n_lags * n_signals, n_windows * s_val))
         for i in range(n_lags * n_signals):
@@ -262,7 +283,7 @@ def tds_dpcca_worker(
             for w in range(n_windows):
                 detrend_data = _detrend(common_windows[i, w, :], pd)
                 detrended[i, position_idx : position_idx + s_val] = detrend_data
-                position_idx += s_val
+                position_idx += s_val  # detrend in each window
         covariation = _covariation_single_signal(detrended)
         correlation = _correlation(covariation)
         partial_correlation = _partial_correlation(correlation)
