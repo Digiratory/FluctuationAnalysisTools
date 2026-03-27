@@ -1,176 +1,140 @@
 import numpy as np
-from filterpy.kalman import KalmanFilter
-from numpy.typing import NDArray
-
-from StatTools.analysis.dfa import DFA
-from StatTools.experimental.analysis.tools import get_extra_h_dfa
-from StatTools.filters.symbolic_kalman import (
-    get_sympy_filter_matrix,
-    refine_filter_matrix,
-)
-from StatTools.generators.kasdin_generator import create_kasdin_generator
 
 
-class FractalKalmanFilter(KalmanFilter):
-    """
-    Advanced Kalman filter with automatic parameter estimation.
+class KalmanFilter:
+    """Implements a Kalman filter without controlling influence.
 
-    Extends filterpy's KalmanFilter with intelligent methods for automatically
-    calculating the transition matrix (F) and measurement covariance matrix (R)
-    based on signal characteristics. Uses DFA analysis and autoregressive
-    modeling to estimate system dynamics from data.
+    Attributes
+    ----------
+    _x : np.ndarray
+        Current state estimate.
+    _P : np.ndarray
+        Current state covariance matrix.
+    _Q : np.ndarray
+        Process noise matrix.
+    _F : np.ndarray
+        State transition matrix.
+    _H : np.ndarray
+        Measurement matrix.
+    _R : np.ndarray
+        Measurement noise matrix.
+    _I : np.ndarray
+        Identity matrix of shape (dim_x, dim_x).
 
-    The enhanced filter can adapt to different types of signals by analyzing
-    their fractal properties and long-range correlations to set appropriate
-    filter parameters.
+    Examples
+    --------
+    Constant-position model: 2D state (position, velocity),
+    1D measurement (position only).
 
-    Basic usage:
-        ```python
-        import numpy as np
-        from StatTools.filters.kalman_filter import FractalKalmanFilter
-
-        # Create enhanced Kalman filter
-        kf = FractalKalmanFilter(dim_x=2, dim_z=1)
-
-        # Auto-configure using signal characteristics
-        kf.auto_configure(
-            signal=original_signal,
-            noise=noise_signal,
-            dt=0.01,
-            order=2
-        )
-
-        # Use like standard Kalman filter
-        kf.predict()
-        kf.update(measurement)
-        ```
-
-    Attributes:
-        Inherits all attributes from filterpy.kalman.KalmanFilter
-        Additional methods for automatic parameter estimation
-
-    Note:
-        Requires filterpy package and StatTools analysis modules.
-        Automatically estimates Hurst exponent and AR coefficients from data.
+    >>> import numpy as np
+    >>> dt = 1.0
+    >>> kf = KalmanFilter(
+    ...     dim_x=2,
+    ...     dim_z=1,
+    ...     F=np.array([[1, dt], [0, 1]]),
+    ...     H=np.array([[1, 0]]),
+    ...     R=np.array([[5.0]]),
+    ...     Q=np.array([[0.1, 0.0], [0.0, 0.1]]),
+    ... )
+    >>> measurements = [1.1, 2.3, 3.0, 4.2, 5.1]
+    >>> for z in measurements:
+    ...     kf.predict()
+    ...     kf.adjust(np.array([[z]]))
+    >>> kf.get_current_state()   # [position, velocity]
+    >>> kf.get_current_measurement()  # filtered position, shape (1, 1)
     """
 
-    def eval_R(self, signal: NDArray[np.float64]) -> NDArray[np.float64]:
-        """
-        Calculate measurement covariance matrix (R) from signal statistics.
-
-        Estimates the measurement noise covariance by analyzing the variance
-        structure of the input signal. Uses the signal's standard deviation
-        as a proxy for measurement uncertainty.
-
-        Args:
-            signal (NDArray[np.float64]): Input signal representing measurement noise
-
-        Returns:
-            NDArray[np.float64]: A 1x1 dimension covariance matrix R
-        """
-        raise NotImplementedError()
-
-    def _get_filter_coefficients(
-        self, signal: NDArray[np.float64]
-    ) -> NDArray[np.float64]:
-        """
-        Extract autoregressive filter coefficients from signal using DFA.
-
-        Performs fractal analysis on the signal to estimate its Hurst exponent,
-        then uses this to generate appropriate autoregressive coefficients
-        for the Kalman filter transition matrix.
-
-        Args:
-            signal (NDArray[np.float64]): Input signal for coefficient estimation
-
-        Returns:
-            NDArray[np.float64]: Autoregressive filter coefficients
-
-        Note:
-            Uses DFA to estimate Hurst exponent, then KasdinGenerator to
-            create appropriate AR coefficients based on the fractal properties.
-        """
-        dfa = DFA(signal)
-        h = dfa.find_h()
-        generator = create_kasdin_generator(h, length=signal.shape[0])
-        return generator.get_filter_coefficients()
-
-    def get_filter_matrix(
-        self, order: int, model_h: np.array, length: int, dt: float = 1.0
-    ):
-        """
-        Calculate state transition matrix (F) based on signal characteristics.
-
-        Automatically constructs the transition matrix by analyzing the signal's
-        fractal properties and estimating appropriate autoregressive coefficients.
-        Supports different system orders for varying model complexity.
-
-        Args:
-            signal (NDArray[np.float64]): Input signal for analysis
-            dt (float): Time step between measurements
-            order (int): System order (1, 2, or 3) controlling model complexity
-
-        Returns:
-            NDArray[np.float64]: State transition matrix F
-
-        Raises:
-            ValueError: If order is not 1, 2, or 3 (unsupported orders)
-
-        Note:
-            - Order 1: Simple velocity model
-            - Order 2: Acceleration model (default, most common)
-            - Order 3: Jerk model (higher order dynamics)
-
-            The matrix coefficients are derived from autoregressive parameters
-            estimated from the signal's fractal properties.
-
-        """
-        generator = create_kasdin_generator(model_h, length=length)
-        ar_filter = generator.get_filter_coefficients()
-        if order == 1:
-            # Simple position-velocity model
-            return np.array([[1]])
-        number_matrix = refine_filter_matrix(
-            get_sympy_filter_matrix(order), order, ar_filter
-        )
-        return np.array(number_matrix, dtype=np.float64)
-
-    def auto_configure(
+    def __init__(
         self,
-        signal: NDArray[np.float64],
-        noise: NDArray[np.float64],
-        dt: float = 1.0,
-        order: int = None,
+        dim_x: int,
+        dim_z: int,
+        F: np.ndarray,
+        H: np.ndarray,
+        R: np.ndarray,
+        Q: np.ndarray,
     ):
         """
-        TODO: implement dt
-        Automatically adjusts R, F based on the input data.
-
-        Parameters:
-            signal (NDArray[np.float64]): Original signal
-            noise (NDArray[np.float64]): Noise signal
-            dt (float): Time interval between measurements
-            ar_vector(NDArray[np.float64]): Autoregressive filter coefficients
+        Parameters
+        ----------
+        dim_x : int
+            Filter order (dimension of the state vector).
+        dim_z : int
+            Dimension of the measurement vector.
+        F : np.ndarray
+            State transition matrix, shape (dim_x, dim_x).
+        H : np.ndarray
+            Measurement matrix, shape (dim_z, dim_x).
+        R : np.ndarray
+            Measurement noise matrix, shape (dim_z, dim_z).
+        Q : np.ndarray
+            Process noise matrix, shape (dim_x, dim_x).
         """
-        # TODO: add Q matrix auto configuration
-        self.H[0][0] = 1.0
-        model_h = get_extra_h_dfa(signal)
-        noise_var = np.std(noise) ** 2
-        kasdin_lenght = len(signal)
-        self.set_parameters(model_h, noise_var, kasdin_lenght, dt, order)
+        self._Q = np.atleast_2d(Q)
+        self._F = np.atleast_2d(F)
+        self._H = np.atleast_2d(H)
+        self._R = np.atleast_2d(R)
 
-    def set_parameters(
-        self,
-        model_h,
-        noise_var: float | list[float],
-        kasdin_lenght: int,
-        dt: float = 1,
-        order: int = None,
-    ):
-        if order is None:
-            order = self.dim_x
-        if isinstance(noise_var, list):
-            raise NotImplementedError("Only for 1d data")
-        self.H[0][0] = 1.0
-        self.R = noise_var
-        self.F = self.get_filter_matrix(order, model_h, kasdin_lenght, dt)
+        assert self._F.shape == (dim_x, dim_x), f"F must be ({dim_x}, {dim_x})"
+        assert self._H.shape == (dim_z, dim_x), f"H must be ({dim_z}, {dim_x})"
+        assert self._R.shape == (dim_z, dim_z), f"R must be ({dim_z}, {dim_z})"
+        assert self._Q.shape == (dim_x, dim_x), f"Q must be ({dim_x}, {dim_x})"
+        self._x = np.zeros((dim_x, 1))
+        self._P = np.eye(dim_x)
+        self._I = np.eye(dim_x)
+
+    def predict(self) -> None:
+        """Extrapolation step.
+
+        Computes the predicted system state at the next time step.
+        """
+        # x = Fx
+        self._x = self._F @ self._x
+        # P = FPF' + Q
+        self._P = self._F @ self._P @ self._F.T + self._Q
+
+    def adjust(self, z: np.ndarray) -> None:
+        """Correction step.
+
+        Adjusts the prediction to reflect the new measurement.
+
+        Parameters
+        ----------
+        z : np.ndarray
+            New system measurement, shape (dim_z, 1).
+
+        Raises
+        ------
+        ValueError
+            If None is passed instead of a measurement, or if z has wrong shape.
+        """
+        if z is None:
+            raise ValueError("Do not pass None as a measurement")
+        z = np.atleast_2d(np.asarray(z, dtype=float))
+        if z.shape != (self._H.shape[0], 1):
+            raise ValueError(f"Expected z shape ({self._H.shape[0]}, 1), got {z.shape}")
+        # y = z - Hx
+        y = z - self._H @ self._x
+        # S = HPH' + R
+        S = self._H @ self._P @ self._H.T + self._R
+        # Si = inv(S)
+        # Instead of K = PH'Si used solve
+        K = np.linalg.solve(S, self._H @ self._P).T
+        # x = x + Ky
+        self._x = self._x + K @ y
+        # Instead of P = (I - KH)P used Joseph form  P = (I - KH)P(I - KH)' + KRK'.
+        # https://en.wikipedia.org/wiki/Kalman_filter#Deriving_the_posteriori_estimate_covariance_matrix
+        # Bucy, Richard S., and Peter D. Joseph. Filtering for stochastic processes with applications to guidance. Vol. 326. American Mathematical Soc., 2005.
+        IKH = self._I - K @ self._H
+        self._P = IKH @ self._P @ IKH.T + K @ self._R @ K.T
+
+    def get_current_state(self) -> np.ndarray:
+        """Returns the current state of the system."""
+        return self._x
+
+    def get_current_measurement(self) -> np.ndarray:
+        """Returns the current measurement of the system."""
+        return self.get_measurement_of_state(self._x)
+
+    def get_measurement_of_state(self, x: np.ndarray) -> np.ndarray:
+        """Returns the measurement of the state."""
+        return self._H @ x

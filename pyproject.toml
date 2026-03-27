@@ -46,4 +46,6 @@ Changelog = "https://github.com/Digiratory/FluctuationAnalysisTools/blob/main/CH
 
 [tool.setuptools_scm]
 version_file = "StatTools/_version.py"
-tag_regex = "^release/([\\.0-9]+)$"
+tag_regex = "^release/(.+?)(?:-.+)?$"
+version_scheme = "release-branch-semver"
+local_scheme = "no-local-version"

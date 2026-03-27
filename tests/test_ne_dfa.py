@@ -6,7 +6,6 @@ import pandas as pd
 import pytest
 from scipy import signal, stats
 
-from StatTools.analysis.dpcca import dpcca
 from StatTools.analysis.nonequidistant.dfa import dfa as ne_dfa
 
 TEST_H_VALUES = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]

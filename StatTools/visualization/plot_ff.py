@@ -3,14 +3,19 @@ from functools import partial
 import matplotlib.pyplot as plt
 import numpy as np
 
-from StatTools.analysis.utils import analyse_cross_ff, cross_fcn_sloped, ff_params
+from StatTools.analysis.utils import (
+    analyse_cross_ff,
+    analyse_cross_ff_linregress,
+    cross_fcn_sloped,
+    ff_params,
+)
 
 
 def plot_ff(
     hs: np.ndarray,
     S: np.ndarray,
     ff_parameter: ff_params,
-    residuals=None,
+    residuals: np.ndarray | None = None,
     ax=None,
     title=None,
 ):
@@ -29,6 +34,10 @@ def plot_ff(
     Returns:
         matplotlib.axes.Axes: The matplotlib axis containing the plot.
     """
+    if residuals is not None and hs.shape != residuals.shape:
+        raise ValueError(
+            f"residuals and hs must have compatible dimensions. Got residuals.shape={residuals.shape}, hs.shape={hs.shape}"
+        )
 
     if ax is None:
         fig, ax = plt.subplots(figsize=(30, 10))
@@ -76,6 +85,7 @@ def plot_ff(
             ax.axvline(
                 c.value, color="k", linestyle="--", label=f"Cross at $S={c.value:.2f}$"
             )
+
     if residuals is not None:
         ax.errorbar(
             S,
