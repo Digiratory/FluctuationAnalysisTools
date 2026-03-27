@@ -239,9 +239,8 @@ def dpcca(
 
         if len(s) < 1:
             raise ValueError(
-                f"All input S values are larger than vector length L={arr.shape[1]}!"
+                f"All input S values exceed or equal vector length L={arr.shape[1]}!"
             )
-
         if len(s) != len(init_s):
             print(
                 f"\tDPCCA warning: some S values exceed vector length "
