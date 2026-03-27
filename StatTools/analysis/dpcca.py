@@ -234,9 +234,18 @@ def dpcca(
         if len(s) < 1:
             raise ValueError("No input S values were provided!")
 
-        if any(x > arr.shape[1] for x in s):
+        init_s = list(s)
+        s = [x for x in s if x < arr.shape[1]]
+
+        if len(s) < 1:
             raise ValueError(
-                f"Cannot use S > L. Got S={s}, L={arr.shape[1]}"
+                f"All input S values are larger than vector length L={arr.shape[1]}!"
+            )
+
+        if len(s) != len(init_s):
+            print(
+                f"\tDPCCA warning: some S values exceed vector length "
+                f"L = {arr.shape[1]} and will be ignored. Used S: {s}"
             )
 
         if any(x > arr.shape[1] / 4 for x in s):
@@ -246,8 +255,8 @@ def dpcca(
             )
 
     elif isinstance(s, (float, int)):
-        if s > arr.shape[1]:
-            raise ValueError(f"Cannot use S > L. Got S={s}, L={arr.shape[1]}")
+        if s >= arr.shape[1]:
+            raise ValueError(f"Cannot use S >= L. Got S={s}, L={arr.shape[1]}")
         if s > arr.shape[1] / 4:
             print(
                 f"\tDPCCA warning: S={s} exceeds the recommended limit "

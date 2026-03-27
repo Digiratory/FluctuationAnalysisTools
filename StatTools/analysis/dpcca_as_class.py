@@ -125,9 +125,18 @@ class DPCCA:
             if len(s) < 1:
                 raise ValueError("No input S values were provided!")
 
-            if any(x > self.shape[1] for x in s):
+            init_s = list(s)
+            s = [x for x in s if x < self.shape[1]]
+
+            if len(s) < 1:
                 raise ValueError(
-                    f"Cannot use S > L. Got S={s}, L={self.shape[1]}"
+                    f"All input S values are larger than vector length L={self.shape[1]}!"
+                )
+
+            if len(s) != len(init_s):
+                print(
+                    f"\tDPCCA warning: some S values exceed vector length "
+                    f"L = {self.shape[1]} and will be ignored. Used S: {s}"
                 )
 
             if any(x > self.shape[1] / 4 for x in s):
@@ -138,7 +147,11 @@ class DPCCA:
 
             processes = len(s) if processes > len(s) else processes
 
-            S = np.array(s, dtype=int) if not isinstance(self.s, np.ndarray) else s
+            S = (
+                np.array(s, dtype=int)
+                if not isinstance(self.s, np.ndarray)
+                else np.array(s)
+            )
             S_by_workers = np.array_split(S, processes)
 
             if processes == 1:
@@ -163,9 +176,11 @@ class DPCCA:
                     partial(self._dpcca_worker, force_gc=force_gc), S_by_workers
                 )
 
-        elif isinstance(self.s, (float, int)):
-            if self.s > self.shape[1]:
-                raise ValueError(f"Cannot use S > L. Got S={self.s}, L={self.shape[1]}")
+        elif isinstance(self.s, int):
+            if self.s >= self.shape[1]:
+                raise ValueError(
+                    f"Cannot use S >= L. Got S={self.s}, L={self.shape[1]}"
+                )
             if self.s > self.shape[1] / 4:
                 print(
                     f"\tDPCCA warning: S={self.s} exceeds the recommended limit "
