@@ -1,5 +1,7 @@
 {
   "$schema": "https://context7.com/schema/context7.json",
   "projectTitle": "FluctuationAnalysisTools",
-  "description": "Python library for Fluctuation Analysis of time series."
+  "description": "Python library for Fluctuation Analysis of time series.",
+  "url": "https://context7.com/digiratory/fluctuationanalysistools",  
+  "public_key": "pk_AbWrqYpNeQpYCXUMhWLMn"
 }
