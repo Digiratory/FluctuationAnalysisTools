@@ -6,7 +6,7 @@ import numpy as np
 from scipy.special import gamma as gamma_func
 
 
-def add_noise(signal: Sequence, ratio: float) -> np.ndarray:
+def add_noise(signal: Sequence, ratio: float) -> Tuple[np.ndarray, np.ndarray]:
     """
     Adds noise with a specified ratio of signal to noise ratio (sigma_signal / sigma_noise).
 
