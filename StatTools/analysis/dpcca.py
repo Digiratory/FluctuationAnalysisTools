@@ -210,7 +210,9 @@ def tds_dpcca_worker(
     end_arr = max(0, max_lag)  # value of points of data should be trimmed
     if start_arr + end_arr >= n:
         raise ValueError("need less time delay")
-    valid_arr_lag = n - start_arr - end_arr  # new size of array with time lags
+    valid_arr_lag = (
+        n - start_arr - end_arr
+    )  # new size of array with time lags длина после обрезки краев
 
     f = np.zeros((n_lags, len(s_list), n_signals, n_signals), dtype=np.float64)
     r = np.zeros((n_lags, len(s_list), n_signals, n_signals), dtype=np.float64)
@@ -219,84 +221,62 @@ def tds_dpcca_worker(
     for s_i, s_val in enumerate(s_list):
 
         if s_val > valid_arr_lag:
-            raise ValueError("Time window couldnt be larger then input data array")
+            raise ValueError("Time window couldn't be larger then input data array")
         step_s = int(step * s_val)
-        n_windows_arr = []
-        for lag in time_delay_list:
-            len_lagged = valid_arr_lag - abs(lag)
-            if len_lagged > 0:
-                cur_window = (len_lagged - s_val) // step_s + 1
-                n_windows_arr.append(
-                    cur_window
-                )  # calculation value of windows for each lag
-            else:
-                n_windows_arr.append(0)
-
-        n_windows = min(n_windows_arr) if n_windows_arr else 0
-        if n_windows <= 0:
-            continue
-        all_windows = np.zeros((n_lags, n_signals, n_windows, s_val))
-        for lag_index, lag in enumerate(time_delay_list):
-            start_base_signal = start_arr
-            len_base_signal = valid_arr_lag
-
-            start_lagged_signal = start_arr + lag  # start position of shifted signal
-            len_lagged_signal = valid_arr_lag - abs(
-                lag
-            )  # valid length of analyzed data with lag
-            if start_lagged_signal < 0 or len_lagged_signal > n:
-                continue
-            min_len = min(
-                len_base_signal, len_lagged_signal
-            )  # valid length of analyzed data for each signal
-            if min_len < s_val:
-                continue
-            shifted_arr = np.zeros(
-                (n_signals, min_len)
-            )  # array for all signals with valid length
-            shifted_arr[0, :] = cumsum_arr[
-                0, start_base_signal : start_base_signal + min_len
-            ]  # signal without lag
-            for sig_idx in range(1, n_signals):
-                shifted_arr[sig_idx, :] = cumsum_arr[
-                    sig_idx, start_lagged_signal : start_lagged_signal + min_len
-                ]  # signals with lag in input array
-
-            windows = np.lib.stride_tricks.sliding_window_view(
-                shifted_arr, window_shape=s_val, axis=1
-            )  # window of shifted data with step with lag
-            windows = windows[:, ::step_s, :]
-            useful_windows = min(
-                windows.shape[1], n_windows
-            )  # find min between actual length and calculated for lag
-
-            if useful_windows > 0:
-                all_windows[lag_index, :, :useful_windows, :] = windows[
-                    :, :useful_windows, :
-                ]  # copy of windows with current lag to general array with data
-        if np.all(all_windows == 0):
-            continue  # if size of all windows<0: skip current s
-        common_windows = all_windows.reshape(n_lags * n_signals, n_windows, s_val)
-        detrended = np.zeros((n_lags * n_signals, n_windows * s_val))
-        for i in range(n_lags * n_signals):
-            position_idx = 0
-            for w in range(n_windows):
-                detrend_data = _detrend(common_windows[i, w, :], pd)
-                detrended[i, position_idx : position_idx + s_val] = detrend_data
-                position_idx += s_val  # detrend in each window
-        covariation = _covariation_single_signal(detrended)
-        correlation = _correlation(covariation)
-        partial_correlation = _partial_correlation(correlation)
-
-        covariation_lag = covariation.reshape(n_lags, n_signals, n_lags, n_signals)
-        correlation_lag = correlation.reshape(n_lags, n_signals, n_lags, n_signals)
-        partial_correlation_lag = partial_correlation.reshape(
-            n_lags, n_signals, n_lags, n_signals
-        )
-        for D in range(n_lags):
-            f[D, s_i, :, :] = covariation_lag[D, :, D, :]
-            r[D, s_i, :, :] = correlation_lag[D, :, D, :]
-            p[D, s_i, :, :] = partial_correlation_lag[D, :, D, :]
+        for i in range(n_signals):  # цикл чтобы сравнивать пары 0,1 0,2 и тд
+            for j in range(i + 1, n_signals):
+                for lag_idx, lag in enumerate(time_delay_list):
+                    len_lagged = valid_arr_lag - abs(lag)  # кол-во точек после сдвига
+                    if len_lagged < s_val:
+                        continue
+                    shifted_arr = np.zeros(
+                        (2, len_lagged)
+                    )  # пустой массив для 2-х сигналов текущей пары
+                    shifted_arr[0, :] = cumsum_arr[
+                        i, start_arr : start_arr + len_lagged
+                    ]  # базовый сигнал i  его кол-во точек
+                    start_lagged_signal = (
+                        start_arr + lag
+                    )  # начальная точка сигнала с лагом
+                    shifted_arr[1, :] = cumsum_arr[
+                        j, start_lagged_signal : start_lagged_signal + len_lagged
+                    ]  # сдвинутый сигнал j  его кол-во точек
+                    windows = np.lib.stride_tricks.sliding_window_view(
+                        shifted_arr, window_shape=s_val, axis=1
+                    )  # скользящее окно с s_val размером окна
+                    windows = windows[:, ::step_s, :]  # прореживание окон
+                    n_windows = windows.shape[1]  # число окон
+                    if n_windows <= 0:
+                        continue
+                    all_windows = windows.reshape(
+                        2 * n_windows, s_val
+                    )  # объединение всех окон для 2-ч сигналов
+                    detrended = np.zeros(
+                        (2, n_windows * s_val)
+                    )  # детрнд данные для 2-х сигналов со всеми точками
+                    for sig in range(2):
+                        position_idx = 0
+                        for w in range(n_windows):  # все окна текущего сигнала
+                            detrend_data = _detrend(
+                                all_windows[sig * n_windows + w], pd
+                            )  # [254,256] - 2 сигнала*127 окон по 256 точек это all windows
+                            # детренд в каждом окне для каждого сигнала- [0/1*127+1..2..3] чтобы затронуть каждое коно каждого сигнала
+                            detrended[sig, position_idx : position_idx + s_val] = (
+                                detrend_data
+                            )
+                            position_idx += s_val
+                    covariation = _covariation_single_signal(detrended)
+                    correlation = _correlation(covariation)
+                    partial_correlation = _partial_correlation(correlation)
+                    f[lag_idx, s_i, i, j] = covariation[
+                        0, 1
+                    ]  # значения все корр ков и тд между сигналами и запись в 4d массив
+                    f[lag_idx, s_i, j, i] = covariation[1, 0]
+                    r[lag_idx, s_i, i, j] = correlation[0, 1]
+                    r[lag_idx, s_i, j, i] = correlation[1, 0]
+                    p[lag_idx, s_i, i, j] = partial_correlation[0, 1]
+                    p[lag_idx, s_i, j, i] = partial_correlation[1, 0]
+    print("tds")
     return p, r, f
 
 
