@@ -120,24 +120,41 @@ class DPCCA:
             force_gc = (2, 2)
 
         if isinstance(self.s, (tuple, list, np.ndarray)):
-            init_s_len = len(self.s)
+            s = list(self.s)
 
-            s = list(filter(lambda x: x <= self.shape[1] / 4, self.s))
+            if len(s) < 1:
+                raise ValueError("No input S values were provided!")
+
+            init_s = list(s)
+            s = [x for x in s if x < self.shape[1]]
+
             if len(s) < 1:
                 raise ValueError(
-                    "All input S values are larger than vector shape / 4 !"
+                    f"All input S values exceed or equal vector length L={self.shape[1]}!"
+                )
+            if len(s) != len(init_s):
+                print(
+                    f"\tDPCCA warning: some S values exceed vector length "
+                    f"L = {self.shape[1]} and will be ignored. Used S: {s}"
                 )
 
-            if len(s) != init_s_len:
-                print(f"\tDPCAA warning: only following S values are in use: {s}")
+            if any(x > self.shape[1] / 4 for x in s):
+                print(
+                    f"\tDPCCA warning: some S values exceed the recommended limit "
+                    f"L / 4 = {self.shape[1] / 4:.3f} and will still be used: {s}"
+                )
 
             processes = len(s) if processes > len(s) else processes
 
-            S = np.array(s, dtype=int) if not isinstance(self.s, np.ndarray) else s
+            S = (
+                np.array(s, dtype=int)
+                if not isinstance(self.s, np.ndarray)
+                else np.array(s)
+            )
             S_by_workers = np.array_split(S, processes)
 
             if processes == 1:
-                return self._dpcca_worker(s, force_gc=force_gc) + s
+                return self._dpcca_worker(s, force_gc=force_gc) + tuple(s)
 
             if isinstance(self.arr, np.ndarray):
                 chunk = SharedBuffer(self.shape, c_double)
@@ -159,8 +176,15 @@ class DPCCA:
                 )
 
         elif isinstance(self.s, int):
+            if self.s >= self.shape[1]:
+                raise ValueError(
+                    f"Cannot use S >= L. Got S={self.s}, L={self.shape[1]}"
+                )
             if self.s > self.shape[1] / 4:
-                raise ValueError("Cannot use S > L / 4")
+                print(
+                    f"\tDPCCA warning: S={self.s} exceeds the recommended limit "
+                    f"L / 4 = {self.shape[1] / 4:.3f} and will still be used"
+                )
         else:
             raise TypeError(
                 "Input S values could be : int, tuple, list or numpy.ndarray!"
