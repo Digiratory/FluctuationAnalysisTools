@@ -1,10 +1,6 @@
-import pybind11
 from numpy import get_include
-from pybind11.setup_helpers import build_ext
+from pybind11.setup_helpers import Pybind11Extension, build_ext
 from setuptools import Extension, setup
-
-# Find pybind11 include directory
-pybind11_include = pybind11.get_include()
 
 # Original C API module - integrated into StatTools package
 c_api_module = Extension(
@@ -12,14 +8,14 @@ c_api_module = Extension(
     include_dirs=[get_include()],
     sources=["src/cpp/StatTools_C_API.cpp", "src/cpp/StatTools_core.cpp"],
     language="c++",
+    extra_compile_args=["-std=c++14"],
 )
 
 # Modern pybind11 bindings - integrated into StatTools package
-stattools_bindings = Extension(
+stattools_bindings = Pybind11Extension(
     "StatTools.native.StatTools_bindings",
-    include_dirs=[get_include(), pybind11_include],
+    include_dirs=[get_include()],
     sources=["src/cpp/StatTools_bindings.cpp", "src/cpp/StatTools_core.cpp"],
-    language="c++",
 )
 
 setup(
