@@ -7,6 +7,7 @@ import numpy as np
 from .kasdin_generator import create_kasdin_generator
 from .lbfbm_generator import LBFBmGenerator
 from .mfnoise_generator import mfnoise
+from .multi_scale_fractional_generator import chol2d_mult
 
 
 def generate_fbn(

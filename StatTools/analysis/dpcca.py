@@ -24,21 +24,6 @@ def _covariation_single_signal(signal: np.ndarray):
     return F
 
 
-def _covariation(signal_1: np.ndarray, signal_2: np.ndarray = None):
-    """
-    Implementation equation (4) from [1]
-
-    [1] Yuan, N., Fu, Z., Zhang, H. et al. Detrended Partial-Cross-Correlation Analysis: A New Method for Analyzing Correlations in Complex System. Sci Rep 5, 8143 (2015). https://doi.org/10.1038/srep08143
-    """
-    if signal_2 is None:
-        return _covariation_single_signal(signal_1)
-    F = np.zeros((signal_1.shape[0], signal_1.shape[0]), dtype=float)
-    for n in range(signal_1.shape[0]):
-        for m in range(signal_2.shape[0]):
-            F[n][m] = np.mean(signal_1[n] * signal_2[m])
-    return F
-
-
 def _correlation(F: np.ndarray):
     """
     Implementation equation (6) from [1]
@@ -52,13 +37,15 @@ def _correlation(F: np.ndarray):
     return R
 
 
-def _cross_correlation(R: np.ndarray):
+def _partial_correlation(R: np.ndarray):
     """
     Implementation equation (9) from [1]
     [1] Yuan, N., Fu, Z., Zhang, H. et al. Detrended Partial-Cross-Correlation Analysis: A New Method for Analyzing Correlations in Complex System. Sci Rep 5, 8143 (2015). https://doi.org/10.1038/srep08143
     """
     P = np.zeros((R.shape[0], R.shape[0]), dtype=float)
-    Cinv = np.linalg.inv(R)
+    # justification: finding the inverse matrix with pinv (Moore-Penrose pseudo-inverse of a matrix)
+    # to avoid interaction with singular correlation matrix
+    Cinv = np.linalg.pinv(R)
     for n in range(R.shape[0]):
         for m in range(n + 1):
             if Cinv[n][n] * Cinv[m][m] < 0:
@@ -81,13 +68,12 @@ def _detrend(current_signal: np.ndarray, pd: np.int32):
     Returns:
         y_detrended(np.ndarray): Detrended data array.
     """
-    current_signal_values = len(current_signal)
-    xw = np.arange(current_signal_values, dtype=np.int32)
-    p_fit = np.polyfit(xw, current_signal, deg=pd)
+    current_signal = np.asarray(current_signal, dtype=np.float64)
+    n = len(current_signal)
+    xw = np.arange(n, dtype=np.int32)
+    p_fit = np.polyfit(xw, current_signal, deg=pd, rcond=None)
     z_fit = np.polyval(p_fit, xw)
-    y_detrended = np.zeros_like(current_signal, dtype=np.float64)
-    y_detrended[:] = current_signal - z_fit
-    return y_detrended
+    return current_signal - z_fit
 
 
 # @profile()
@@ -121,13 +107,10 @@ def dpcca_worker(
         cumsum_arr = np.cumsum(cumsum_arr, axis=1)
 
     shape = arr.shape
-
     F = np.zeros((len(s_current), shape[0], shape[0]), dtype=float)
     R = np.zeros((len(s_current), shape[0], shape[0]), dtype=float)
     P = np.zeros((len(s_current), shape[0], shape[0]), dtype=float)
-
     for s_i, s_val in enumerate(s_current):
-
         window_start_indices = np.arange(
             0, shape[1] - s_val + 1, int(step * s_val)
         )  # array of starting indeces of sliding windows
@@ -151,9 +134,9 @@ def dpcca_worker(
 
         Y = np.array([np.concatenate(Y[i]) for i in range(Y.shape[0])])
 
-        F[s_i] = _covariation(Y)
+        F[s_i] = _covariation_single_signal(Y)
         R[s_i] = _correlation(F[s_i])
-        P[s_i] = _cross_correlation(R[s_i])
+        P[s_i] = _partial_correlation(R[s_i])
 
     return P, R, F
 
@@ -170,9 +153,9 @@ def tds_dpcca_worker(
 ) -> Union[tuple, None]:
     """
     Core of DPCAA algorithm with time lags. Takes bunch of S-values and returns 3 4d-matrices: first index
-    represents length of time lags array. There is global data and indices: data in all input array and
-    local data: data and indices in current window. Comparison signal_1 and signal_2 with time delays by indicies:
-    find correlation and etc of x[i] and y[i+tau] and x[i] and y[i-tau] where tau is value of time lag.
+    represents length of time lags array. There is global data and indices: data in all input array as s_val.
+    Comparison of signal_1 and signal_2 with time delays by windows(s_val) shifting: find correlation and etc
+    of x[i] and y[i+tau] and x[i] and y[i-tau] where tau is value of time lag.
 
     Args:
         s (Union[int, Iterable]): points where  fluctuation function F(s) is calculated.
@@ -202,120 +185,105 @@ def tds_dpcca_worker(
 
     """
 
-    if max_time_delay is None:
-        return dpcca_worker(s, arr, step, pd, gc_params, n_integral=n_integral)
-
     s_list = [s] if isinstance(s, int) else list(s)
 
     if time_delays is not None:
-        time_delay_list = np.arange(-time_delays, time_delays + 1, dtype=int)
+        time_delay_list = np.array(time_delays, dtype=int)
     elif max_time_delay is not None:
         time_delay_list = np.arange(-max_time_delay, max_time_delay + 1, dtype=int)
     else:
         raise ValueError("Use lags")
 
-    n_lags = len(time_delay_list)  # length of input time lags array
+    n_lags = len(time_delay_list)
     n_signals, n = arr.shape
+    n_virtual_signals = n_lags * n_signals
 
     cumsum_arr = arr
     for _ in range(n_integral):
-        cumsum_arr = np.cumsum(cumsum_arr, axis=1)  # integral sum
+        cumsum_arr = np.cumsum(cumsum_arr, axis=1)
 
-    f = np.zeros(
-        (n_lags, len(s_list), n_signals, n_signals), dtype=np.float64
-    )  # covariation
-    r = np.zeros(
-        (n_lags, len(s_list), n_signals, n_signals), dtype=np.float64
-    )  # levels of cross correlation
-    p = np.zeros(
-        (n_lags, len(s_list), n_signals, n_signals), dtype=np.float64
-    )  # partial cross correlation levels
+    min_lag = min(time_delay_list)
+    max_lag = max(time_delay_list)
+    start_arr = max(0, -min_lag)  # value of points of data should be trimmed
+    end_arr = max(0, max_lag)  # value of points of data should be trimmed
+    if start_arr + end_arr >= n:
+        raise ValueError("need less time delay")
+    valid_arr_lag = (
+        n - start_arr - end_arr
+    )  # new size of array with time lags длина после обрезки краев
+    signals_shifted = cumsum_arr[
+        :, start_arr : n - end_arr
+    ]  # точки для сигнала с лагом в исходном массиве
+    lag_view_list = []
+    stride_0 = signals_shifted.strides[0]
+    stride_1 = signals_shifted.strides[1]
+    for lag in time_delay_list:
+        start = max(0, lag)  # точка начала свдинутого массива
+        end = start + valid_arr_lag
+        lagged_signals = np.lib.stride_tricks.as_strided(
+            signals_shifted[:, start:end],
+            shape=(n_signals, valid_arr_lag),
+            strides=(stride_0, stride_1),
+            writeable=False,
+        )
+        lag_view_list.append(lagged_signals)
+    lag_view_concarenated = np.concatenate(lag_view_list, axis=0)
+    n_scales = len(s_list)
+    f_virt = np.zeros(
+        (n_scales, n_virtual_signals, n_virtual_signals), dtype=np.float64
+    )
+    r_virt = np.zeros(
+        (n_scales, n_virtual_signals, n_virtual_signals), dtype=np.float64
+    )
+    p_virt = np.zeros(
+        (n_scales, n_virtual_signals, n_virtual_signals), dtype=np.float64
+    )
 
     for s_i, s_val in enumerate(s_list):
 
-        if s_val > n:
-            raise ValueError("Time window couldnt be larger then input data array")
-
-        start = np.arange(
-            0, n - s_val + 1
-        )  # all indices of beginning of the windows in input data array
-        start_window = start[
-            :: int(step * s_val)
-        ]  # biginning of the all windows with step
-        n_windows = len(start_window)  # value of windows
-
-        signal_view = np.lib.stride_tricks.sliding_window_view(
-            cumsum_arr, window_shape=s_val, axis=1
-        )  # sliding window
-        signal_view = signal_view[
-            :, :: int(step * s_val), :
-        ]  # (signals,all windows, len of window)
-
-        # We have global data and indices: data in all input array
-        # local data: data and indices in current window
-        # compare signal_1 and signal_2 with time delays by indices: find correlation and etc of
-        # x[i] and y[i+tau] and x[i] and y[i-tau] where tau is value of time lag. Also we have limits:
-        # if time lag>0: global start index-value of start position of current window, global_end: min(start_pos+s_val,n-lag)
-        # where s_val is length of current window also index of current value must be less then (n-lag) where n is length of input array
-        # local end index must be less then (length of current window-time lag). Cross points is value of points for analyse.
-        # if time lag<0: global start: max(value of start position of current window, value of start position of current window-time lag)
-        # global end is value of start position of current window+ length of current window.
-        # Also we have shift_sig: index of current value in current time window of signal without lag: x[i] and x[i+tau]
-        # and shift_sig_lag: index of current value in current time window of signal with lag
-        # index of current value in current time window of signal with lag: x[i-tau] and x[i].
-        for lag_index, lag in enumerate(time_delay_list):
+        if s_val > valid_arr_lag:
+            raise ValueError("Time window couldn't be larger then input data array")
+        step_s = int(step * s_val)
+        windows = np.lib.stride_tricks.sliding_window_view(
+            lag_view_concarenated, window_shape=s_val, axis=1
+        )
+        windows = windows[:, ::step_s, :]
+        n_windows = windows.shape[1]
+        if n_windows <= 0:
+            continue
+        detrended = np.zeros((n_virtual_signals, n_windows * s_val))
+        for sig_idx in range(n_virtual_signals):
+            position_idx = 0
             for w in range(n_windows):
-                start_pos = start_window[w]
-                if lag >= 0:  # value of start position of current window
-                    global_end = min(start_pos + s_val, n - lag)
-                    if (
-                        start_pos >= global_end
-                    ):  # start position cant be larger then global index lag
-                        continue
-                    local_end = s_val - lag
-                    if local_end <= 0:
-                        continue
-
-                    cross_points = min(global_end - start_pos, local_end)
-                    if cross_points <= 0:
-                        continue
-
-                    shift_sig = 0
-                    shift_sig_lag = lag
-                else:
-
-                    global_start = max(start_pos, start_pos - lag)
-                    global_end = start_pos + s_val
-                    if global_start >= global_end:
-                        continue
-
-                    cross_points = global_end - global_start
-                    if cross_points <= 0:
-                        continue
-                    shift_sig = -lag
-                    shift_sig_lag = 0
-
-                signal_windows = np.zeros((n_signals, cross_points), dtype=float)
-                signal_lag_windows = np.zeros((n_signals, cross_points), dtype=float)
-                for sig_idx in range(n_signals):
-
-                    data_true = signal_view[
-                        sig_idx, w, shift_sig : shift_sig + cross_points
-                    ]  # detrended array with selected data
-                    data_lag_true = signal_view[
-                        sig_idx, w, shift_sig_lag : cross_points + shift_sig_lag
-                    ]  # detrended array with selected data with time lags
-
-                    signal_windows[sig_idx] = _detrend(data_true, pd)
-                    signal_lag_windows[sig_idx] = _detrend(data_lag_true, pd)
-                covariation = _covariation(signal_windows, signal_lag_windows)
-                correlation = _correlation(covariation)
-                cross_correlation = _cross_correlation(correlation)
-
-            f[lag_index, s_i] = covariation
-            r[lag_index, s_i] = correlation
-            p[lag_index, s_i] = cross_correlation
-
+                detrend_data = _detrend(windows[sig_idx, w, :], pd)
+                detrended[sig_idx, position_idx : position_idx + s_val] = detrend_data
+                position_idx += s_val
+        covariation = _covariation_single_signal(detrended)
+        correlation = _correlation(covariation)
+        partial_correlation = _partial_correlation(correlation)
+        f_virt[s_i] = covariation
+        r_virt[s_i] = correlation
+        p_virt[s_i] = partial_correlation
+    print(f"форма массива для ковариации по всем лагам{f_virt.shape}")
+    print(f"форма массива для корреляции по всем лагам{r_virt.shape}")
+    print(f"форма массива для частной корреляции по всем лагам{p_virt.shape}")
+    f_5d = f_virt.reshape(n_scales, n_lags, n_signals, n_lags, n_signals)
+    print(f"форма массива для ковариации по всем лагам и всем сигналам{f_5d.shape}")
+    r_5d = r_virt.reshape(n_scales, n_lags, n_signals, n_lags, n_signals)
+    p_5d = p_virt.reshape(n_scales, n_lags, n_signals, n_lags, n_signals)
+    f = np.zeros((n_lags, len(s_list), n_signals, n_signals), dtype=np.float64)
+    r = np.zeros((n_lags, len(s_list), n_signals, n_signals), dtype=np.float64)
+    p = np.zeros((n_lags, len(s_list), n_signals, n_signals), dtype=np.float64)
+    zero_lag_idx = np.where(time_delay_list == 0)[0]
+    lag_1 = zero_lag_idx[0]
+    for lag_idx in range(n_lags):
+        lag_1_idx = lag_1
+        lag_2_idx = lag_idx
+        r[lag_idx] = r_5d[:, lag_1_idx, :, lag_2_idx, :]
+        p[lag_idx] = p_5d[:, lag_1_idx, :, lag_2_idx, :]
+        f[lag_idx] = f_5d[:, lag_1_idx, :, lag_2_idx, :]
+    print(f"форма массива для ковариации по всем лагам и всем сигналам{f.shape}")
+    print("tds")
     return p, r, f
 
 
@@ -332,6 +300,7 @@ def dpcca(
     step: float,
     s: Union[int, Iterable],
     max_lag=None,
+    time_delays=None,
     buffer=None,
     gc_params: tuple = None,
     short_vectors: bool = False,
@@ -384,57 +353,6 @@ def dpcca(
             stacklevel=2,
         )
 
-    if max_lag is not None:
-        concatenate_all = False  # concatenate if 1d array , no need to use 3d P, R, F
-        if arr.ndim == 1:
-            arr = np.array([arr])
-            concatenate_all = True
-
-        if isinstance(s, Iterable):
-            init_s_len = len(s)
-
-            s = list(filter(lambda x: x <= arr.shape[1] / 4, s))
-            if len(s) < 1:
-                raise ValueError(
-                    "All input S values are larger than vector shape / 4 !"
-                )
-
-            if len(s) != init_s_len:
-                print(f"\tDPCAA warning: only following S values are in use: {s}")
-
-        elif isinstance(s, (float, int)):
-            if s > arr.shape[1] / 4:
-                raise ValueError("Cannot use S > L / 4")
-            s = (s,)
-
-        if (processes == 1 or len(s) == 1) and max_lag is not None:
-            p, r, f = tds_dpcca_worker(
-                s,
-                arr,
-                step,
-                pd,
-                time_delays=None,
-                max_time_delay=max_lag,
-                gc_params=gc_params,
-                n_integral=n_integral,
-            )
-
-            if concatenate_all:
-                return concatenate_3d_matrices(p, r, f) + (s,)
-            else:
-                return p, r, f, s
-
-    if short_vectors:
-        return dpcca_worker(
-            s,
-            arr,
-            step,
-            pd,
-            gc_params=gc_params,
-            short_vectors=True,
-            n_integral=n_integral,
-        ) + (s,)
-
     concatenate_all = False  # concatenate if 1d array , no need to use 3d P, R, F
     if arr.ndim == 1:
         arr = np.array([arr])
@@ -474,6 +392,35 @@ def dpcca(
                 f"L / 4 = {arr.shape[1] / 4:.3f} and will still be used"
             )
         s = (s,)
+
+    if max_lag is not None or (time_delays is not None):
+
+        p, r, f = tds_dpcca_worker(
+            s,
+            arr,
+            step,
+            pd,
+            time_delays=time_delays,
+            max_time_delay=max_lag,
+            gc_params=gc_params,
+            n_integral=n_integral,
+        )
+
+        if concatenate_all:
+            return concatenate_3d_matrices(p, r, f) + (s,)
+        else:
+            return p, r, f, s
+
+    if short_vectors:
+        return dpcca_worker(
+            s,
+            arr,
+            step,
+            pd,
+            gc_params=gc_params,
+            short_vectors=True,
+            n_integral=n_integral,
+        ) + (s,)
 
     if processes == 1 or len(s) == 1:
         p, r, f = dpcca_worker(
