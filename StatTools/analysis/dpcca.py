@@ -107,13 +107,10 @@ def dpcca_worker(
         cumsum_arr = np.cumsum(cumsum_arr, axis=1)
 
     shape = arr.shape
-
     F = np.zeros((len(s_current), shape[0], shape[0]), dtype=float)
     R = np.zeros((len(s_current), shape[0], shape[0]), dtype=float)
     P = np.zeros((len(s_current), shape[0], shape[0]), dtype=float)
-
     for s_i, s_val in enumerate(s_current):
-
         window_start_indices = np.arange(
             0, shape[1] - s_val + 1, int(step * s_val)
         )  # array of starting indeces of sliding windows
@@ -191,7 +188,7 @@ def tds_dpcca_worker(
     s_list = [s] if isinstance(s, int) else list(s)
 
     if time_delays is not None:
-        time_delay_list = time_delays
+        time_delay_list = np.array(time_delays, dtype=int)
     elif max_time_delay is not None:
         time_delay_list = np.arange(-max_time_delay, max_time_delay + 1, dtype=int)
     else:
@@ -199,6 +196,7 @@ def tds_dpcca_worker(
 
     n_lags = len(time_delay_list)
     n_signals, n = arr.shape
+    n_virtual_signals = n_lags * n_signals
 
     cumsum_arr = arr
     for _ in range(n_integral):
@@ -213,69 +211,78 @@ def tds_dpcca_worker(
     valid_arr_lag = (
         n - start_arr - end_arr
     )  # new size of array with time lags длина после обрезки краев
-
-    f = np.zeros((n_lags, len(s_list), n_signals, n_signals), dtype=np.float64)
-    r = np.zeros((n_lags, len(s_list), n_signals, n_signals), dtype=np.float64)
-    p = np.zeros((n_lags, len(s_list), n_signals, n_signals), dtype=np.float64)
+    signals_shifted = cumsum_arr[
+        :, start_arr : n - end_arr
+    ]  # точки для сигнала с лагом в исходном массиве
+    lag_view_list = []
+    stride_0 = signals_shifted.strides[0]
+    stride_1 = signals_shifted.strides[1]
+    for lag in time_delay_list:
+        start = max(0, lag)  # точка начала свдинутого массива
+        end = start + valid_arr_lag
+        lagged_signals = np.lib.stride_tricks.as_strided(
+            signals_shifted[:, start:end],
+            shape=(n_signals, valid_arr_lag),
+            strides=(stride_0, stride_1),
+            writeable=False,
+        )
+        lag_view_list.append(lagged_signals)
+    lag_view_concarenated = np.concatenate(lag_view_list, axis=0)
+    n_scales = len(s_list)
+    f_virt = np.zeros(
+        (n_scales, n_virtual_signals, n_virtual_signals), dtype=np.float64
+    )
+    r_virt = np.zeros(
+        (n_scales, n_virtual_signals, n_virtual_signals), dtype=np.float64
+    )
+    p_virt = np.zeros(
+        (n_scales, n_virtual_signals, n_virtual_signals), dtype=np.float64
+    )
 
     for s_i, s_val in enumerate(s_list):
 
         if s_val > valid_arr_lag:
             raise ValueError("Time window couldn't be larger then input data array")
         step_s = int(step * s_val)
-        for i in range(n_signals):  # цикл чтобы сравнивать пары 0,1 0,2 и тд
-            for j in range(i + 1, n_signals):
-                for lag_idx, lag in enumerate(time_delay_list):
-                    len_lagged = valid_arr_lag - abs(lag)  # кол-во точек после сдвига
-                    if len_lagged < s_val:
-                        continue
-                    shifted_arr = np.zeros(
-                        (2, len_lagged)
-                    )  # пустой массив для 2-х сигналов текущей пары
-                    shifted_arr[0, :] = cumsum_arr[
-                        i, start_arr : start_arr + len_lagged
-                    ]  # базовый сигнал i  его кол-во точек
-                    start_lagged_signal = (
-                        start_arr + lag
-                    )  # начальная точка сигнала с лагом
-                    shifted_arr[1, :] = cumsum_arr[
-                        j, start_lagged_signal : start_lagged_signal + len_lagged
-                    ]  # сдвинутый сигнал j  его кол-во точек
-                    windows = np.lib.stride_tricks.sliding_window_view(
-                        shifted_arr, window_shape=s_val, axis=1
-                    )  # скользящее окно с s_val размером окна
-                    windows = windows[:, ::step_s, :]  # прореживание окон
-                    n_windows = windows.shape[1]  # число окон
-                    if n_windows <= 0:
-                        continue
-                    all_windows = windows.reshape(
-                        2 * n_windows, s_val
-                    )  # объединение всех окон для 2-ч сигналов
-                    detrended = np.zeros(
-                        (2, n_windows * s_val)
-                    )  # детрнд данные для 2-х сигналов со всеми точками
-                    for sig in range(2):
-                        position_idx = 0
-                        for w in range(n_windows):  # все окна текущего сигнала
-                            detrend_data = _detrend(
-                                all_windows[sig * n_windows + w], pd
-                            )  # [254,256] - 2 сигнала*127 окон по 256 точек это all windows
-                            # детренд в каждом окне для каждого сигнала- [0/1*127+1..2..3] чтобы затронуть каждое коно каждого сигнала
-                            detrended[sig, position_idx : position_idx + s_val] = (
-                                detrend_data
-                            )
-                            position_idx += s_val
-                    covariation = _covariation_single_signal(detrended)
-                    correlation = _correlation(covariation)
-                    partial_correlation = _partial_correlation(correlation)
-                    f[lag_idx, s_i, i, j] = covariation[
-                        0, 1
-                    ]  # значения все корр ков и тд между сигналами и запись в 4d массив
-                    f[lag_idx, s_i, j, i] = covariation[1, 0]
-                    r[lag_idx, s_i, i, j] = correlation[0, 1]
-                    r[lag_idx, s_i, j, i] = correlation[1, 0]
-                    p[lag_idx, s_i, i, j] = partial_correlation[0, 1]
-                    p[lag_idx, s_i, j, i] = partial_correlation[1, 0]
+        windows = np.lib.stride_tricks.sliding_window_view(
+            lag_view_concarenated, window_shape=s_val, axis=1
+        )
+        windows = windows[:, ::step_s, :]
+        n_windows = windows.shape[1]
+        if n_windows <= 0:
+            continue
+        detrended = np.zeros((n_virtual_signals, n_windows * s_val))
+        for sig_idx in range(n_virtual_signals):
+            position_idx = 0
+            for w in range(n_windows):
+                detrend_data = _detrend(windows[sig_idx, w, :], pd)
+                detrended[sig_idx, position_idx : position_idx + s_val] = detrend_data
+                position_idx += s_val
+        covariation = _covariation_single_signal(detrended)
+        correlation = _correlation(covariation)
+        partial_correlation = _partial_correlation(correlation)
+        f_virt[s_i] = covariation
+        r_virt[s_i] = correlation
+        p_virt[s_i] = partial_correlation
+    print(f"форма массива для ковариации по всем лагам{f_virt.shape}")
+    print(f"форма массива для корреляции по всем лагам{r_virt.shape}")
+    print(f"форма массива для частной корреляции по всем лагам{p_virt.shape}")
+    f_5d = f_virt.reshape(n_scales, n_lags, n_signals, n_lags, n_signals)
+    print(f"форма массива для ковариации по всем лагам и всем сигналам{f_5d.shape}")
+    r_5d = r_virt.reshape(n_scales, n_lags, n_signals, n_lags, n_signals)
+    p_5d = p_virt.reshape(n_scales, n_lags, n_signals, n_lags, n_signals)
+    f = np.zeros((n_lags, len(s_list), n_signals, n_signals), dtype=np.float64)
+    r = np.zeros((n_lags, len(s_list), n_signals, n_signals), dtype=np.float64)
+    p = np.zeros((n_lags, len(s_list), n_signals, n_signals), dtype=np.float64)
+    zero_lag_idx = np.where(time_delay_list == 0)[0]
+    lag_1 = zero_lag_idx[0]
+    for lag_idx in range(n_lags):
+        lag_1_idx = lag_1
+        lag_2_idx = lag_idx
+        r[lag_idx] = r_5d[:, lag_1_idx, :, lag_2_idx, :]
+        p[lag_idx] = p_5d[:, lag_1_idx, :, lag_2_idx, :]
+        f[lag_idx] = f_5d[:, lag_1_idx, :, lag_2_idx, :]
+    print(f"форма массива для ковариации по всем лагам и всем сигналам{f.shape}")
     print("tds")
     return p, r, f
 
