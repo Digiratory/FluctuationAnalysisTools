@@ -6,7 +6,9 @@ import numpy as np
 from scipy.special import gamma as gamma_func
 
 
-def add_noise(signal: Sequence, ratio: float) -> Tuple[np.ndarray, np.ndarray]:
+def add_noise(
+    signal: Sequence, ratio: float, noise_seed: int | None = None
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     Adds noise with a specified ratio of signal to noise ratio (sigma_signal / sigma_noise).
 
@@ -14,6 +16,7 @@ def add_noise(signal: Sequence, ratio: float) -> Tuple[np.ndarray, np.ndarray]:
         signal (Sequence): The original signal.
         ratio (float): The desired sigma_signal / sigma_noise ratio
                 (for example, 10 = noise 10 times weaker).
+        noise_seed (int): Seed for the random number generator.
 
     Returns:
         A noisy signal, noise.
@@ -21,7 +24,8 @@ def add_noise(signal: Sequence, ratio: float) -> Tuple[np.ndarray, np.ndarray]:
     signal = np.array(signal)
     sigma_signal = np.std(signal, ddof=1)
     sigma_noise = sigma_signal / ratio
-    noise = np.random.normal(0, sigma_noise, size=signal.shape)
+    rng = np.random.default_rng(seed=noise_seed)
+    noise = rng.normal(0, sigma_noise, size=signal.shape)
     return signal + noise, noise
 
 
