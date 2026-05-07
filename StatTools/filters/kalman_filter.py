@@ -99,17 +99,21 @@ class KalmanFilter:
 
         Parameters
         ----------
-        z : np.ndarray
+        z : np.ndarray or None
             New system measurement, shape (dim_z, 1).
+            If None, the correction step is skipped and the filter propagates
+            the predicted state forward (IIR / dead-reckoning behaviour).
 
         Raises
         ------
         ValueError
-            If None is passed instead of a measurement, or if z has wrong shape.
+            If z has wrong shape.
         """
         if z is None:
-            raise ValueError("Do not pass None as a measurement")
+            return
         z = np.atleast_2d(np.asarray(z, dtype=float))
+        if np.any(np.isnan(z)):
+            return
         if z.shape != (self._H.shape[0], 1):
             raise ValueError(f"Expected z shape ({self._H.shape[0]}, 1), got {z.shape}")
         # y = z - Hx
