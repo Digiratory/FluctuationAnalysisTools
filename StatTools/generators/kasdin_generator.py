@@ -161,11 +161,15 @@ class ERKasdinGenerator(KasdinGenerator):
 def create_kasdin_generator(
     h: float,
     length: int,
-    random_generator: Optional[Iterator[float]] = iter(np.random.randn, None),
+    random_generator: Optional[Iterator[float]] = None,
     normalize=True,
     filter_coefficients_length=None,
+    seed: int | None = None,
 ) -> KasdinGenerator | ERKasdinGenerator:
     """Fabric for creating a Kasdin generator."""
+    if random_generator is None:
+        rng = np.random.default_rng(seed)
+        random_generator = iter(rng.standard_normal, None)
     if 0.5 <= h <= 1.5:
         return KasdinGenerator(
             h, length, random_generator, normalize, filter_coefficients_length
