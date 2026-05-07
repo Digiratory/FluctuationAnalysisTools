@@ -224,11 +224,11 @@ def test_dpcca_chol2d_correlation(hurst, des_r0):
     Three independent fBn tracks are generated with the given Hurst exponent
     and then correlated by multiplying with the Cholesky factor of R0.
     """
-    length = 2**14
+    length = 2**15
     s_list = [512, 1024, 2048]
-    sig_1 = generate_fbn(hurst=hurst, length=length)
-    sig_2 = generate_fbn(hurst=hurst, length=length)
-    sig_3 = generate_fbn(hurst=hurst, length=length)
+    sig_1 = generate_fbn(hurst=hurst, length=length, seed=4)
+    sig_2 = generate_fbn(hurst=hurst, length=length, seed=44)
+    sig_3 = generate_fbn(hurst=hurst, length=length, seed=14)
 
     np.random.seed(42)
     signal_triplet = np.vstack((sig_1, sig_2, sig_3)).T
