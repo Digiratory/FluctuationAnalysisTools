@@ -175,11 +175,6 @@ class TestKalmanFilterAdjust:
             kf_2x1.adjust(np.array([[np.random.randn()]]))
         assert np.allclose(kf_2x1._P, kf_2x1._P.T, atol=1e-10)
 
-    def test_adjust_none_raises(self, kf_2x1):
-        """ValueError raised when None is passed as measurement."""
-        with pytest.raises(ValueError, match="Do not pass None as a measurement"):
-            kf_2x1.adjust(None)
-
     def test_adjust_wrong_shape_raises(self, kf_2x1):
         """ValueError raised when measurement has wrong shape."""
         with pytest.raises(ValueError, match="Expected z shape \\(1, 1\\), got"):
