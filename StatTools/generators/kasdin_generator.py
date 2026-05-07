@@ -15,16 +15,24 @@ class KasdinGenerator:
         doi:10.1109/5.381848
 
     Args:
-        h (float): Hurst exponent (0.5 < H < 1.5) # TODO: update docs
-        length (int): Maximum length of the sequence.
-        random_generator (Iterator[float], optional): Iterator providing random values.
-            Defaults is iter(np.random.randn(), None).
+        h (float): Hurst exponent, 0.5 <= H <= 1.5.
+        length (int): Length of the generated sequence (must be >= 1).
+        random_generator (Iterator[float], optional): Iterator providing i.i.d. normal
+            random values. If None, one is created from ``seed`` via
+            ``np.random.default_rng``.
+        normalize (bool): If True, the output is zero-mean unit-variance.
+        filter_coefficients_length (int, optional): Number of filter coefficients to use.
+            Defaults to ``length``.
+        seed (int | None): Seed for the internal RNG. Ignored when
+            ``random_generator`` is provided explicitly.
     Raises:
-        ValueError: If length is less than 1
-        StopIteration('Sequence exhausted') : If maximum sequence length has been reached.
+        ValueError: If ``length`` is less than 1 or ``h`` is out of range.
+        StopIteration('Sequence exhausted'): If the iterator is advanced past the end.
 
     Example usage:
     >>> generator = KasdinGenerator(h, length)
+    >>> trj = list(generator)
+    >>> generator = KasdinGenerator(h, length, seed=42)
     >>> trj = list(generator)
     """
 
@@ -32,15 +40,19 @@ class KasdinGenerator:
         self,
         h: float,
         length: int,
-        random_generator: Optional[Iterator[float]] = iter(np.random.randn, None),
+        random_generator: Optional[Iterator[float]] = None,
         normalize=True,
         filter_coefficients_length=None,
+        seed: Optional[int] = None,
     ) -> None:
         if length is not None and length < 1:
             raise ValueError("Length must be more than 1")
         self.validate_h(h)
         self._h = h
         self.length = length
+        if random_generator is None:
+            rng = np.random.default_rng(seed)
+            random_generator = iter(rng.standard_normal, None)
         self.random_generator = random_generator
         self.filter_coefficients_length = filter_coefficients_length
 
@@ -104,15 +116,32 @@ class KasdinGenerator:
 
 
 class ERKasdinGenerator(KasdinGenerator):
-    """Extended range version of Kasdin generator, which can be used for H < 0.5 and H > 1.5"""
+    """
+    Extended-range Kasdin generator supporting H < 0.5 and H > 1.5.
+
+    Values outside [0.5, 1.5] are reached by repeatedly differencing (H > 1.5)
+    or integrating (H < 0.5) a standard KasdinGenerator sequence.
+
+    Args:
+        h (float): Hurst exponent. Any real value is accepted.
+        length (int): Length of the generated sequence.
+        random_generator (Iterator[float], optional): Iterator providing i.i.d. normal
+            random values. If None, one is created from ``seed`` via
+            ``np.random.default_rng``.
+        normalize (bool): If True, the output is zero-mean unit-variance.
+        filter_coefficients_length (int, optional): Number of filter coefficients.
+        seed (int | None): Seed for the internal RNG. Ignored when
+            ``random_generator`` is provided explicitly.
+    """
 
     def __init__(
         self,
         h: float,
         length: int,
-        random_generator: Optional[Iterator[float]] = iter(np.random.randn, None),
+        random_generator: Optional[Iterator[float]] = None,
         normalize=True,
         filter_coefficients_length=None,
+        seed: Optional[int] = None,
     ) -> None:
         self._effective_h = h
         self.steps_count = 0
@@ -136,6 +165,7 @@ class ERKasdinGenerator(KasdinGenerator):
             random_generator,
             normalize,
             filter_coefficients_length,
+            seed,
         )
 
         if self.steps_count > 0:
@@ -161,15 +191,24 @@ class ERKasdinGenerator(KasdinGenerator):
 def create_kasdin_generator(
     h: float,
     length: int,
-    random_generator: Optional[Iterator[float]] = iter(np.random.randn, None),
+    random_generator: Optional[Iterator[float]] = None,
     normalize=True,
     filter_coefficients_length=None,
+    seed: Optional[int] = None,
 ) -> KasdinGenerator | ERKasdinGenerator:
-    """Fabric for creating a Kasdin generator."""
-    if 0.5 <= h <= 1.5:
-        return KasdinGenerator(
-            h, length, random_generator, normalize, filter_coefficients_length
-        )
-    return ERKasdinGenerator(
-        h, length, random_generator, normalize, filter_coefficients_length
-    )
+    """Factory for creating a Kasdin generator.
+
+    Args:
+        h (float): Hurst exponent.
+        length (int): Length of the generated sequence.
+        random_generator (Iterator[float], optional): Custom RNG iterator.
+            If None, one is built from ``seed``.
+        normalize (bool): Zero-mean unit-variance normalisation.
+        filter_coefficients_length (int, optional): Filter order.
+        seed (int | None): RNG seed. Ignored when ``random_generator`` is given.
+
+    Returns:
+        KasdinGenerator for 0.5 <= h <= 1.5, ERKasdinGenerator otherwise.
+    """
+    cls = KasdinGenerator if 0.5 <= h <= 1.5 else ERKasdinGenerator
+    return cls(h, length, random_generator, normalize, filter_coefficients_length, seed)
