@@ -62,7 +62,7 @@ def get_F_kinematic(order: int) -> NDArrayF64:
     return F
 
 
-def get_F_matrix_yw(signal: np.ndarray, order: int) -> np.ndarray:
+def get_F_yw(signal: np.ndarray, order: int) -> np.ndarray:
     """
     Yule-Walker AR(order) estimate → companion matrix F.
 
@@ -145,7 +145,7 @@ def _build_kalman_system(
             method="kasdin",
             filter_type="lfilter_truncated",
         )[0]
-        F = get_F_matrix_yw(signal, order)
+        F = get_F_yw(signal, order)
     elif method == "Baseline":
         F = get_F_kinematic(order)
     else:
