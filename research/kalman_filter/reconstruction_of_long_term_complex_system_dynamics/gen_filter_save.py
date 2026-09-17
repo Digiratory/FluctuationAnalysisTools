@@ -62,7 +62,7 @@ def get_F_kinematic(order: int) -> NDArrayF64:
     return F
 
 
-def get_F_yw(signal: np.ndarray, order: int) -> np.ndarray:
+def get_F_yw(signal: np.ndarray, order: int) -> NDArrayF64:
     """
     Yule-Walker AR(order) estimate → companion matrix F.
 
