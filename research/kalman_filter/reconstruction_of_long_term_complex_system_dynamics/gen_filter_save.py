@@ -5,6 +5,7 @@ Signal generation, noise perturbation, and Kalman filtering pipeline.
 from __future__ import annotations
 
 import logging
+import math
 import random
 import time
 from pathlib import Path
@@ -13,6 +14,7 @@ import numpy as np
 import numpy.typing as npt
 from joblib import Parallel, delayed
 from scipy import stats
+from statsmodels.regression.linear_model import yule_walker
 from tqdm import tqdm
 
 from StatTools.analysis.dfa import dfa
@@ -37,6 +39,47 @@ NDArrayF64 = npt.NDArray[np.float64]
 
 _F_CACHE: dict[tuple, NDArrayF64] = {}
 _Q_CACHE: dict[tuple, NDArrayF64] = {}
+
+
+def get_F_kinematic(order: int) -> NDArrayF64:
+    """Constant-velocity (uniform rectilinear motion) state-transition matrix,
+    generalised to `order` states via a discrete Taylor expansion (dt=1).
+
+    order=2 is the textbook constant-velocity model [[1, 1], [0, 1]]
+    (position += velocity, velocity unchanged); higher orders extend it to
+    constant acceleration, constant jerk, etc.:
+        F[i, j] = 1/(j-i)!  for j >= i, else 0
+    (dt=1, so the usual dt^(j-i) factor drops out). Unlike Kasdin/YW/
+    BackDiff, this fits no AR/fBm structure — it assumes a fixed-order
+    polynomial (deterministic) trend, with correction coming only from Q/R
+    via the Kalman gain. It is the reference filter against which the
+    model-based F constructions above are judged.
+    """
+    F = np.zeros((order, order))
+    for i in range(order):
+        for j in range(i, order):
+            F[i, j] = 1.0 / math.factorial(j - i)
+    return F
+
+
+def get_F_yw(signal: np.ndarray, order: int) -> NDArrayF64:
+    """
+    Yule-Walker AR(order) estimate → companion matrix F.
+
+    Uses moment-matching (Toeplitz system) via statsmodels.
+    Unlike OLS, YW guarantees a valid autocorrelation-consistent solution.
+    """
+    ar_coeffs, _ = yule_walker(signal, order=order, method="mle")
+
+    # Companion matrix:
+    # [ a1  a2  ...  a_{p-1}  ap ]
+    # [  1   0  ...      0     0 ]
+    # [  0   1  ...      0     0 ]
+    # [         ...              ]
+    F = np.zeros((order, order))
+    F[0, :] = ar_coeffs
+    F[1:, :-1] = np.eye(order - 1)
+    return F
 
 
 def _compute_h(sig):
@@ -84,6 +127,37 @@ def _get_H(order: int) -> NDArrayF64:
     return H
 
 
+def _build_kalman_system(
+    noisy_signal: NDArrayF64,
+    noise: NDArrayF64,
+    model_h: float,
+    method: str,
+    order: int,
+) -> tuple[NDArrayF64, NDArrayF64, NDArrayF64, NDArrayF64]:
+    length = len(noisy_signal)
+
+    if method == "Kasdin":
+        F = _cached_F_matrix(model_h, order, length)
+    elif method == "YW":
+        # for purity, not the original signal is used, but a synthetic signal with a given H.
+        signal = generate_fbn(
+            hurst=model_h,
+            length=len(noisy_signal),
+            method="kasdin",
+            filter_type="lfilter_truncated",
+        )[0]
+        F = get_F_yw(signal, order)
+    elif method == "Baseline":
+        F = get_F_kinematic(order)
+    else:
+        raise ValueError(f"Unknown Kalman filter method: {method!r}")
+
+    H = _get_H(order)
+    R = np.array([[np.nanvar(noise)]])
+    Q = _cached_Q_matrix(model_h, order, length)
+    return F, H, R, Q
+
+
 def filter_signal(
     noisy_signal: NDArrayF64,
     noise: NDArrayF64,
@@ -91,20 +165,10 @@ def filter_signal(
     method: str,
     order: int,
 ) -> NDArrayF64:
-    length = len(noisy_signal)
-
-    if method == "Kasdin":
-        F = _cached_F_matrix(model_h, order, length)
-    else:
-        raise ValueError(f"Unknown Kalman filter method: {method!r}")
-
-    H = _get_H(order)
-    R = np.array([[np.nanvar(noise)]])
-    Q = _cached_Q_matrix(model_h, order, length)
-
+    F, H, R, Q = _build_kalman_system(noisy_signal, noise, model_h, method, order)
     kf = KalmanFilter(order, 1, F=F, H=H, R=R, Q=Q)
 
-    recovered = np.empty(length, dtype=np.float64)
+    recovered = np.empty(len(noisy_signal), dtype=np.float64)
     for i, sample in enumerate(noisy_signal):
         kf.predict()
         kf.adjust(np.array([[sample]]))
