@@ -139,6 +139,7 @@ def _build_kalman_system(
     if method == "Kasdin":
         F = _cached_F_matrix(model_h, order, length)
     elif method == "YW":
+        # for purity, not the original signal is used, but a synthetic signal with a given H.
         signal = generate_fbn(
             hurst=model_h,
             length=len(noisy_signal),
