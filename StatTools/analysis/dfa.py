@@ -16,21 +16,23 @@ from tqdm import TqdmWarning, tqdm
 
 
 def _detrend_segment(
-    y_segment: np.ndarray, indices: np.ndarray, degree: int
+    y_segment: np.ndarray, indices: np.ndarray, degree: int, xp=np
 ) -> np.ndarray:
     """
-    Compute detrended residuals for a single segment.
+    Compute detrended residuals for one segment or a matrix of segments.
 
     Args:
-        y_segment: Integrated time series segment.
+        y_segment: Integrated segment or 2D array with segments in columns.
         indices: Indices for polynomial fitting.
         degree: Polynomial degree for detrending.
+        xp: NumPy or CuPy, matching the input arrays (default: NumPy).
 
     Returns:
-        Residuals (detrended segment).
+        Residuals with the same shape as y_segment.
     """
-    coef = np.polyfit(indices, y_segment, deg=degree)
-    trend = np.polyval(coef, indices)
+    coef = xp.polyfit(indices, y_segment, deg=degree)
+    # This polyval accepts several polynomials and ascending coefficients.
+    trend = xp.polynomial.polynomial.polyval(indices, coef[::-1]).T
     residuals = y_segment - trend
     return residuals
 
@@ -41,6 +43,7 @@ def dfa_worker(
     degree: int = 2,
     s_values: Union[list, np.ndarray, None] = None,
     n_integral: int = 1,
+    xp=np,
 ) -> list:
     """
     Core of the DFA algorithm. Processes a subset of series (indices) and
@@ -52,11 +55,13 @@ def dfa_worker(
         degree: Polynomial degree for detrending.
         s_values: Pre-calculated box sizes (scales).
         n_integral: Number of cumulative sum operations to apply (default: 1).
+        xp: Array library used for calculations: NumPy or CuPy (default: NumPy).
 
     Returns:
         list of (s, F2_s) for each requested index, where F2_s is F^2(s).
+        Scales are NumPy arrays; F2_s arrays belong to the selected library.
     """
-    data = np.asarray(arr, dtype=float)
+    data = xp.asarray(arr, dtype=float)
 
     if data.ndim != 2:
         raise ValueError(
@@ -80,10 +85,10 @@ def dfa_worker(
         series = data[idx]
 
         # Standard DFA preprocessing: mean-centering and integration
-        data_centered = series - np.mean(series)
+        data_centered = series - xp.mean(series)
         y_cumsum = data_centered
         for _ in range(n_integral):
-            y_cumsum = np.cumsum(y_cumsum)
+            y_cumsum = xp.cumsum(y_cumsum)
         series_len = len(data_centered)
 
         s_list = []
@@ -93,35 +98,30 @@ def dfa_worker(
             if s_val >= series_len / 4:
                 continue
 
-            s = np.arange(1, s_val + 1, dtype=int)
+            s = xp.arange(1, s_val + 1, dtype=int)
             len_s = len(s)
             cycles_amount = floor(series_len / len_s)
             if cycles_amount < 1:
                 continue
 
-            f2_sum = 0.0
-            s_temp = s.copy()
+            # Keep the original windows: start at index 1, use cycles_amount - 1.
+            n_segments = cycles_amount - 1
+            segments = y_cumsum[1 : 1 + n_segments * len_s].reshape(n_segments, len_s).T
+            indices_s = (s - 1.5 * len_s).astype(int)
 
-            for i in range(1, cycles_amount):
-                indices_s = (s_temp - (i + 0.5) * len_s).astype(int)
-                y_cumsum_s = y_cumsum[s_temp]
+            # Fit all windows of this scale in one library call.
+            residuals = _detrend_segment(segments, indices_s, degree, xp=xp)
+            f2 = xp.sum(residuals**2, axis=0) / len_s
 
-                # Compute detrended residuals for this segment
-                residuals = _detrend_segment(y_cumsum_s, indices_s, degree)
-
-                # Mean squared residual in the window
-                f2 = np.sum(residuals**2) / len_s
-
-                # Accumulate mean squared residuals to get F^2(s)
-                f2_sum += f2
-                s_temp += s_val
-
-            # Fluctuation function F^2(s)
-            f2_s = f2_sum / cycles_amount
+            # Preserve the original normalization by cycles_amount.
+            f2_s = xp.sum(f2) / cycles_amount
             s_list.append(s_val)
             f2_list.append(f2_s)
 
-        results.append((np.array(s_list), np.array(f2_list)))
+        # Stack on the selected device: CuPy scalars cannot be converted
+        # implicitly into a NumPy array.
+        f2_values = xp.stack(f2_list) if f2_list else xp.empty(0, dtype=float)
+        results.append((np.array(s_list), f2_values))
 
     return results
 
@@ -136,6 +136,7 @@ def dfa(
     n_integral: int = 1,
     s_values: Union[int, Sequence, None] = None,
     s_min: int = 5,
+    backend: str = "cpu",
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Implementation of the Detrended Fluctuation Analysis (DFA) method.
@@ -146,19 +147,39 @@ def dfa(
     Args:
         dataset (ndarray): 1D or 2D array of time series data.
         degree (int): Polynomial degree for detrending (default: 2).
-        processes (int): Number of parallel workers (default: 1).
+        processes (int): Number of CPU workers (default: 1). Ignored with a
+            warning when CUDA is used and processes > 1.
         n_integral (int): Number of cumulative sum operations to apply (default: 1).
         s_values (Union[int, Sequence, None]): points where  fluctuation function F^2(s) is calculated (default: None).
         s_min (int): Minimal scale in s_values (default: 5).
+        backend (str): "cpu" uses NumPy; "cuda" uses CuPy.
+            Falls back to CPU with a warning if CuPy cannot be imported.
 
     Returns:
-        tuple: (s, F2_s)
+        tuple: (s, F2_s), both NumPy arrays, including for the CUDA backend.
             - For 1D input: two 1D arrays s, F2_s.
             - For 2D input:
                 s is a 1D array (same scales for all series),
                 F2_s is a 2D array where each row is F^2(s) for one time series.
     """
-    data = np.asarray(dataset, dtype=float)
+    if backend not in ("cpu", "cuda"):
+        raise ValueError("backend must be 'cpu' or 'cuda'")
+
+    xp = np
+    if backend == "cuda":
+        try:
+            import cupy as xp
+        except ImportError:
+            warnings.warn(
+                "DFA warning: CuPy could not be imported; "
+                "falling back to the CPU backend. "
+                "Install a CuPy package matching your CUDA Toolkit.",
+                UserWarning,
+                stacklevel=2,
+            )
+            xp = np
+
+    data = xp.asarray(dataset, dtype=float)
 
     if data.ndim == 1:
         data = data.reshape(1, -1)
@@ -205,7 +226,15 @@ def dfa(
     n_series = data.shape[0]
     results = None
 
-    if processes <= 1:
+    if xp is not np and processes > 1:
+        warnings.warn(
+            "DFA warning: processes is ignored by the CUDA backend; "
+            "using the current GPU from a single process.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    if processes <= 1 or xp is not np:
         indices = np.arange(n_series)
         results = dfa_worker(
             indices=indices,
@@ -213,6 +242,7 @@ def dfa(
             degree=degree,
             s_values=s_values,
             n_integral=n_integral,
+            xp=xp,
         )
     else:
         processes = min(processes, cpu_count(), n_series)
@@ -244,7 +274,10 @@ def dfa(
         f2_out = f2_list[0]
     else:
         s_out = s_list[0]
-        f2_out = np.vstack(f2_list)
+        f2_out = xp.vstack(f2_list)
+
+    if xp is not np:
+        f2_out = xp.asnumpy(f2_out)
 
     return s_out, f2_out
 
