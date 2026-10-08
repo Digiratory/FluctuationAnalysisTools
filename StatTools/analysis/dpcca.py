@@ -58,7 +58,7 @@ def _cross_correlation(R: np.ndarray):
     [1] Yuan, N., Fu, Z., Zhang, H. et al. Detrended Partial-Cross-Correlation Analysis: A New Method for Analyzing Correlations in Complex System. Sci Rep 5, 8143 (2015). https://doi.org/10.1038/srep08143
     """
     P = np.zeros((R.shape[0], R.shape[0]), dtype=float)
-    Cinv = np.linalg.inv(R)
+    Cinv = np.linalg.pinv(R, rcond=1e-10)
     for n in range(R.shape[0]):
         for m in range(n + 1):
             if Cinv[n][n] * Cinv[m][m] < 0:

@@ -3,7 +3,7 @@ requires = [
     "setuptools>=64.0.0",
     "wheel",
     "numpy>=1.22.4",
-    "setuptools-scm>=8",
+    "setuptools-scm==8.2.0",
     "pandas>=2.0.0",
     "pybind11>=2.11.1",
 ]
