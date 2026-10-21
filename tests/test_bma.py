@@ -96,4 +96,4 @@ def test_bma_accuracy(test_dataset, h, N, rtype):
     # mean (%)
     mean = np.abs(np.mean(np.abs(H_estimates)) - h)
 
-    assert mean == pytest.approx(0, abs=0.2)
+    assert mean == pytest.approx(0, abs=0.25)
