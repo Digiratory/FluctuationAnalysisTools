@@ -22,3 +22,5 @@ memory-bank/*
 research/kalman_filter/filter_matrices
 research/kalman_filter/reconstruction_of_long_term_complex_system_dynamics/data/model_signals
 research/kalman_filter/reconstruction_of_long_term_complex_system_dynamics/data/output
+research/kalman_filter/the_impact_of_kalman_filter_transition_model_selection/output
+research/kalman_filter/gaps_research/data/*

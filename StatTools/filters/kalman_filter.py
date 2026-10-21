@@ -82,15 +82,27 @@ class KalmanFilter:
         self._P = np.eye(dim_x)
         self._I = np.eye(dim_x)
 
-    def predict(self) -> None:
+    def predict(self, rng: np.random.Generator | None = None) -> None:
         """Extrapolation step.
 
         Computes the predicted system state at the next time step.
+
+        Parameters
+        ----------
+        rng : np.random.Generator, optional
+            If given, a process-noise draw ~N(0, Q) is added to the
+            predicted state. This turns the step into a stochastic
+            simulation of the process instead of propagating its
+            deterministic mean, which is what get_current_state()/
+            get_current_measurement() would otherwise return.
         """
         # x = Fx
         self._x = self._F @ self._x
         # P = FPF' + Q
         self._P = self._F @ self._P @ self._F.T + self._Q
+        if rng is not None:
+            noise = rng.multivariate_normal(np.zeros(self._Q.shape[0]), self._Q)
+            self._x = self._x + noise.reshape(-1, 1)
 
     def adjust(self, z: np.ndarray) -> None:
         """Correction step.
