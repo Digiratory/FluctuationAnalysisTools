@@ -64,6 +64,7 @@ def test_kasdin_generator_open_length(h: float, rate: int):
 
 
 @pytest.mark.timeout(20)
+@pytest.mark.skipif(IN_GITHUB_ACTIONS, reason="Test too long for Github Actions.")
 def test_kasdin_lfilter_truncated_large_signal():
     """Verify that lfilter_truncated completes within the timeout for a large signal (rate=20)."""
     rate = 20

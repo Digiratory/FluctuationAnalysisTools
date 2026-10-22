@@ -68,20 +68,25 @@ class TestPybind11Bindings:
         if not NEW_API_AVAILABLE:
             pytest.skip("New API not available")
 
-        # Generate 50 values and test statistical properties
-        values = [StatTools_bindings.get_gauss_dist_value() for _ in range(500)]
+        # Generate values and test statistical properties
+        values = [StatTools_bindings.get_gauss_dist_value() for _ in range(1000)]
 
         # All values should be floats
         assert all(isinstance(x, float) for x in values)
 
         # Test for normality using Shapiro-Wilk test
         # Null hypothesis: the sample comes from a normal distribution
-        # We want to fail to reject the null hypothesis (p-value > 0.05)
+        #
+        # NOTE: any goodness-of-fit test at alpha = 0.05 rejects ~5% of
+        # perfectly normal samples by definition, which made this test flaky
+        # in CI (issue #99). A healthy generator is therefore held to a much
+        # stricter bar (p > 0.001) so it essentially never fails, while real
+        # distribution distortions are still rejected.
         from scipy.stats import shapiro
 
         stat, p_value = shapiro(values)
         assert (
-            p_value > 0.05
+            p_value > 0.001
         ), f"Values do not appear to be normally distributed (p-value: {p_value:.4f})"
 
         # Calculate mean and standard deviation
@@ -90,9 +95,9 @@ class TestPybind11Bindings:
 
         # For standard normal distribution, mean should be close to 0
         # and std should be close to 1
-        # Using reasonable tolerances for statistical testing
-        assert_allclose(sample_mean, 0.0, atol=0.3)  # Allow 0.3 tolerance for mean
-        assert_allclose(sample_std, 1.0, atol=0.2)  # Allow 0.2 tolerance for std
+        # Tolerances are sized from sampling noise at n = 1000:
+        assert_allclose(sample_mean, 0.0, atol=0.2)
+        assert_allclose(sample_std, 1.0, atol=0.2)
 
     def test_cumulative_sum(self, sample_data):
         """Test cumulative sum functionality"""

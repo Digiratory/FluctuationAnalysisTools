@@ -1,19 +1,36 @@
 #include "StatTools_core.h"
 
+namespace
+{
+// Single persistent generator per thread, seeded once through seed_seq so the
+// whole 19937-bit mt19937 state is initialized from several random_device
+// words. Recreating a seeded mt19937 for every single returned value (the old
+// behaviour) made each result the very first output of a freshly seeded
+// generator: slow, and statistically biased for nearby seeds (issue #99).
+std::mt19937 &thread_local_generator()
+{
+    static thread_local std::mt19937 gen = []() {
+        std::random_device rd;
+        std::seed_seq seq{rd(), rd(), rd(), rd(), rd(), rd(), rd(), rd()};
+        return std::mt19937(seq);
+    }();
+    return gen;
+}
+} // namespace
+
 double get_exponential_dist_value(double lambda)
 {
-    std::random_device rd;
-    std::mt19937 gen(rd());
     std::exponential_distribution<double> dist(1.0/lambda);
-    return dist(gen);
+    return dist(thread_local_generator());
 }
 
 double get_gauss_dist_value()
 {
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::normal_distribution<double> dist(0.0, 1.0);
-    return dist(gen);
+    // Persistent distribution object: normal_distribution keeps the second
+    // value of each Marsaglia polar-method pair in an internal cache, so
+    // keeping it alive lets every generated pair be fully used.
+    static thread_local std::normal_distribution<double> dist(0.0, 1.0);
+    return dist(thread_local_generator());
 }
 
 std::vector<double> get_exp_dist_vector(double lambda, int size)

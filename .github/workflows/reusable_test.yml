@@ -36,7 +36,6 @@ jobs:
         shell: bash
         run: |
           /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          brew install numpy scipy
           python -m pip install --upgrade pip wheel setuptools
           pip install pytest pytest-timeout
 
