@@ -22,7 +22,7 @@ def _process_2d_slice(slice_2d: np.ndarray) -> float:
     """
     Calculate DFA for slice.
     """
-    s_vals, f2_vals = dfa(slice_2d, degree=2, processes=1)
+    s_vals, f2_vals = dfa(slice_2d, degree=2, processes=1, s_min=10)
     hs = np.sqrt(f2_vals)
     ff_parameters, _ = analyse_zero_cross_ff(hs, s_vals)
     return ff_parameters.slopes[0].value
@@ -74,5 +74,5 @@ def test_ndfnoise_generator_3d(hurst_theory: float, rate: int):
     hurst_est_array = get_h_dfa_sliced(f)
     hurst_mean = np.mean(hurst_est_array, where=hurst_est_array != 0)
     assert np.isclose(
-        hurst_mean, hurst_theory, atol=0.2
+        hurst_mean, hurst_theory, atol=0.1
     ).all(), f"Hurst mismatch: estimated={hurst_mean}, expected={hurst_theory}"

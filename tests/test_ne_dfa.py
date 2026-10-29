@@ -91,7 +91,7 @@ def test_nonequidistant_0_25_parallel_all_samples(sample_signal, h_target):
     np.random.seed(42)
     step = None
     sig = sample_signal[h_target]
-    s = [2**i for i in range(3, 13)]
+    s = [2**i for i in range(4, 13)]
 
     time_index = [pd.Timestamp(i, unit="s") for i in range(len(sig))]
     scales = [pd.Timedelta(i, unit="s") for i in s]

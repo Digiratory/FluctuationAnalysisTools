@@ -4,10 +4,9 @@ from collections.abc import Sequence
 from contextlib import closing
 from ctypes import c_double
 from functools import partial
-from math import exp, floor
+from math import exp
 from multiprocessing import Array, Lock, Pool, Value, cpu_count
 from threading import Thread
-from typing import Tuple, Union
 
 import numpy as np
 from tqdm import TqdmWarning, tqdm
@@ -38,10 +37,10 @@ def _detrend_segment(
 
 
 def dfa_worker(
-    indices: Union[int, list, np.ndarray],
-    arr: Union[np.ndarray, None] = None,
+    indices: int | list | np.ndarray,
+    arr: np.ndarray | None = None,
     degree: int = 2,
-    s_values: Union[list, np.ndarray, None] = None,
+    s_values: list | np.ndarray | None = None,
     n_integral: int = 1,
     xp=np,
 ) -> list:
@@ -95,26 +94,20 @@ def dfa_worker(
         f2_list = []
 
         for s_val in s_values:
-            if s_val >= series_len / 4:
+            s_val = int(s_val)
+            if s_val > series_len // 4:
                 continue
 
-            s = xp.arange(1, s_val + 1, dtype=int)
-            len_s = len(s)
-            cycles_amount = floor(series_len / len_s)
-            if cycles_amount < 1:
-                continue
+            cycles_amount = series_len // s_val
+            # Non-overlapping windows from the start; the tail (< s points) is dropped
+            segments = y_cumsum[: cycles_amount * s_val].reshape(cycles_amount, s_val).T
+            # Centered local abscissa for better-conditioned polynomial fits
+            indices_s = xp.arange(s_val, dtype=float) - (s_val - 1) / 2
 
-            # Keep the original windows: start at index 1, use cycles_amount - 1.
-            n_segments = cycles_amount - 1
-            segments = y_cumsum[1 : 1 + n_segments * len_s].reshape(n_segments, len_s).T
-            indices_s = (s - 1.5 * len_s).astype(int)
-
-            # Fit all windows of this scale in one library call.
             residuals = _detrend_segment(segments, indices_s, degree, xp=xp)
-            f2 = xp.sum(residuals**2, axis=0) / len_s
+            # Window average: divided by the number of windows included in the sum
+            f2_s = xp.mean(residuals**2)
 
-            # Preserve the original normalization by cycles_amount.
-            f2_s = xp.sum(f2) / cycles_amount
             s_list.append(s_val)
             f2_list.append(f2_s)
 
@@ -134,10 +127,10 @@ def dfa(
     degree: int = 2,
     processes: int = 1,
     n_integral: int = 1,
-    s_values: Union[int, Sequence, None] = None,
+    s_values: int | Sequence | None = None,
     s_min: int = 5,
     backend: str = "cpu",
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Implementation of the Detrended Fluctuation Analysis (DFA) method.
 
@@ -197,9 +190,9 @@ def dfa(
             raise ValueError(
                 f"Cannot create scales with s_max({s_max}) < s_min({s_min})"
             )
-        s_values = [
-            int(exp(step)) for step in np.arange(np.log(s_min), np.log(s_max), 0.5)
-        ]
+        log_offsets = np.arange(0, np.log(s_max / s_min), 0.5)
+        s_values = (s_min * np.exp(log_offsets)).astype(int)
+
     elif isinstance(s_values, Sequence):
         init_s_len = len(s_values)
         if init_s_len < 1:
@@ -387,7 +380,7 @@ class DFA:
 
     def __init__(
         self,
-        dataset: Union[np.ndarray, list, str],
+        dataset: np.ndarray | list | str,
         degree: int = 2,
         root: bool = False,
         ignore_input_control: bool = False,
@@ -487,10 +480,10 @@ class DFA:
 
     @staticmethod
     def dfa_core_cycle(
-        dataset: Union[np.ndarray, list],
+        dataset: np.ndarray | list,
         degree: int,
         root: bool,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Perform DFA for a single vector and return (log(s), log(F(s))).
 
@@ -523,7 +516,7 @@ class DFA:
 
         return log_s, log_f
 
-    def find_h(self, simple_mode: bool = True) -> Union[float, np.ndarray]:
+    def find_h(self, simple_mode: bool = True) -> float | np.ndarray:
         """
         Estimate the Hurst exponent from fluctuation analysis.
 
@@ -572,9 +565,9 @@ class DFA:
         threads: int = cpu_count(),
         progress_bar: bool = False,
         h_control: bool = False,
-        h_target: float = float(),
-        h_limit: float = float(),
-    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
+        h_target: float = 0.0,
+        h_limit: float = 0.0,
+    ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
         """
         Parallel computation of Hurst exponents for 2D datasets.
 
