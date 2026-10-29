@@ -95,26 +95,22 @@ def dfa_worker(
         f2_list = []
 
         for s_val in s_values:
-            if s_val >= series_len / 4:
+            s_val = int(s_val)
+            if s_val > series_len // 4:
                 continue
 
-            s = xp.arange(1, s_val + 1, dtype=int)
-            len_s = len(s)
-            cycles_amount = floor(series_len / len_s)
-            if cycles_amount < 1:
-                continue
+            cycles_amount = series_len // s_val
 
-            # Keep the original windows: start at index 1, use cycles_amount - 1.
-            n_segments = cycles_amount - 1
-            segments = y_cumsum[1 : 1 + n_segments * len_s].reshape(n_segments, len_s).T
-            indices_s = (s - 1.5 * len_s).astype(int)
+            # Все M окон с начала ряда; остаток < s точек в конце отбрасывается.
+            segments = y_cumsum[: cycles_amount * s_val].reshape(cycles_amount, s_val).T
+            # Локальная абсцисса окна, центрированная: −(s−1)/2 … (s−1)/2.
+            indices_s = xp.arange(s_val, dtype=float) - (s_val - 1) / 2
 
-            # Fit all windows of this scale in one library call.
+            # Детрендинг всех окон этого масштаба одним вызовом.
             residuals = _detrend_segment(segments, indices_s, degree, xp=xp)
-            f2 = xp.sum(residuals**2, axis=0) / len_s
+            # Среднее по окнам: делим на число окон, вошедших в сумму.
+            f2_s = xp.mean(residuals**2)
 
-            # Preserve the original normalization by cycles_amount.
-            f2_s = xp.sum(f2) / cycles_amount
             s_list.append(s_val)
             f2_list.append(f2_s)
 
