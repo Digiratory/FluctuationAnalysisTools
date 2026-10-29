@@ -100,15 +100,13 @@ def dfa_worker(
                 continue
 
             cycles_amount = series_len // s_val
-
-            # Все M окон с начала ряда; остаток < s точек в конце отбрасывается.
+            # Non-overlapping windows from the start; the tail (< s points) is dropped
             segments = y_cumsum[: cycles_amount * s_val].reshape(cycles_amount, s_val).T
-            # Локальная абсцисса окна, центрированная: −(s−1)/2 … (s−1)/2.
+            # Centered local abscissa for better-conditioned polynomial fits
             indices_s = xp.arange(s_val, dtype=float) - (s_val - 1) / 2
 
-            # Детрендинг всех окон этого масштаба одним вызовом.
             residuals = _detrend_segment(segments, indices_s, degree, xp=xp)
-            # Среднее по окнам: делим на число окон, вошедших в сумму.
+            # Window average: divided by the number of windows included in the sum
             f2_s = xp.mean(residuals**2)
 
             s_list.append(s_val)
